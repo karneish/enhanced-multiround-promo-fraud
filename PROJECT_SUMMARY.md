@@ -2,16 +2,25 @@
 
 ## 1. One-paragraph overview
 
-This project detects **promotional fraud** (fake accounts abusing "refer-a-friend, earn-a-reward" programs) using **graph-based node classification inside a multi-round adversarial game**. In each round, a fraud **detector** is trained on the current graph, then an **adversary** attacks by injecting new fraud that adapts to whatever escaped detection; the detector is then retrained on the growing graph, and so on. It is an enhanced fork of the paper *"A multi-rounded adversarial scenario for graph-based promo fraud detection"* (Prasetya, Liu, Murata, Matono — Social Network Analysis and Mining, Springer 2025). The two main **enhancements** added on top of the original paper are: **(A) an "Intelligent Fraud Generator"** — a GAN/probabilistic adversary that *learns from missed fraud and synthesizes new, diverse, ring-structured fraud* instead of naively copying the old fraud — and **(B) an interactive Flask web dashboard** for configuring, launching, and live-monitoring experiments. There is also a second, standalone **demo app** (`intelligent-fraud-generator/`) that runs the same ideas on a fully synthetic marketplace world so the whole loop can be watched in a browser without a GPU.
+This project detects **promotional fraud** (fake accounts abusing "refer-a-friend, earn-a-reward" programs) using **graph-based node classification inside a multi-round adversarial game**. In each round, a fraud **detector** is trained on the current graph, then an **adversary** attacks by injecting new fraud that adapts to whatever escaped detection; the detector is then retrained on the growing graph, and so on. It is an enhanced fork of the paper *"A multi-rounded adversarial scenario for graph-based promo fraud detection"* (Prasetya, Liu, Murata, Matono — Social Network Analysis and Mining, Springer 2025).
+
+Three **enhancements** were added on top of the original paper:
+
+- **(A) An "Intelligent Fraud Generator"** — a GAN/probabilistic adversary that *learns from missed fraud and synthesizes new, diverse, ring-structured fraud* instead of naively copying the old fraud.
+- **(B) An interactive Flask web dashboard** for configuring, launching, and live-monitoring experiments.
+- **(C) An "Adaptive Defensive Layer" (ADL)** — a stateful, threshold-adapting decision engine that turns the two-player loop into a full **attacker → detector → defense** ecosystem. It scores every account with a weighted risk model, classifies each as **Allow / Review / Block**, *soft-removes blocked fraud from the graph so it can never be reused by the attacker*, and adapts its thresholds round after round to balance fraud escape against false blocking. It ships as its own runnable dashboard app.
+
+The project therefore contains **three folders**: the main research framework, a GPU-free companion demo of the intelligent generator, and a third self-contained app that demonstrates the full *detector + attacker + defensive layer* ecosystem live in the browser.
 
 ---
 
-## 2. The two folders in this project
+## 2. The three folders in this project
 
 ```
 multiround-promo-fraud\
 ├── multiround-promo-fraud\    ← MAIN research framework (DGL + PyTorch + XGBoost)
-└── intelligent-fraud-generator\  ← COMPANION demo app (Flask, synthetic world)
+├── intelligent-fraud-generator\  ← COMPANION demo app (Flask, synthetic world)
+└── adaptive-defensive-layer\     ← ADL ADD-ON app (Flask, attacker-detector-defense ecosystem)
 ```
 
 ---
@@ -271,7 +280,153 @@ Two interchangeable engines:
 
 ---
 
-## 15. How to run everything (verified on this machine)
+## 15. The Adaptive Defensive Layer (THE defense add-on) — `adaptive-defensive-layer/`
+
+The **Adaptive Defensive Layer (ADL)** is the third enhancement. The original framework (and the companion demo) model a **detector vs. attacker** arms race: the attacker keeps learning fraud that escapes the detector. The ADL closes that loop by adding a *defense* between the detector and the attacker, turning the game into a full **attacker → detector → defense** ecosystem:
+
+```
+detector → P_f (fraud probability) + graph metrics
+        → risk score R  →  Allow / Review / Block
+        → blocked fraud is soft-removed from the world
+        → only SURVIVING fraud ever reaches the intelligent generator
+        → thresholds adapt every round (escape vs. false-block trade-off)
+        → retrain detector → repeat
+```
+
+The defining rule: **blocked fraud can never reach the attacker again.** Because blocked accounts are soft-removed (see §15.4), they disappear from every feature, metric, training split, and generator seed — so the attacker only ever learns from fraud that genuinely survived the whole defense. This is what makes the defense "adaptive": the attacker evolves against a *defended* system, not a passive classifier.
+
+### 15.1 Folder layout
+
+```
+adaptive-defensive-layer\
+├── run.py                          # entry point (serves dashboard + Flask API)
+├── run.bat                         # Windows launcher (reuses the project .venv)
+├── backend\
+│   ├── world.py                    # synthetic promo-referral marketplace world
+│   ├── features.py                 # 17-D feature matrix (11 intrinsic + 6 graph)
+│   ├── detector.py                 # XGBoost fraud detector (class-balanced, F1-threshold)
+│   ├── adl.py                      # ★ THE ADAPTIVE DEFENSIVE LAYER (risk model, decisions, adaptation)
+│   ├── simulation.py               # multi-round attacker-detector-defense engine
+│   ├── app.py                      # Flask REST + SSE API
+│   └── generator\
+│       ├── engine.py               # IntelligentFraudGenerator + ReplayGenerator
+│       ├── gan.py                  # small PyTorch GAN (generator vs. discriminator)
+│       ├── sampler.py              # probabilistic resampling fallback
+│       ├── mutators.py             # strategy mutation + ring/victim structure
+│       └── profile.py              # FraudProfile — rolling memory of survived fraud
+└── frontend\                       # dashboard UI (index.html, app.js, style.css)
+```
+
+### 15.2 The synthetic world (`backend/world.py`)
+
+A seeded marketplace running a referral-reward program, identical in spirit to the companion demo:
+
+- **Genuine accounts** (label 0) — healthy users who invite friends and transact normally.
+- **Fraud accounts** (label 1) — drawn from **5 initial strategy templates**: `fake_identity`, `referral_farming`, `device_spray`, `vpn_hop`, `quiet_sampler`. Each template defines a target feature profile (`means` + `noise`) plus structural preferences (`ring_affinity`, `device_spray`, `ip_reuse`).
+- **11 intrinsic behaviours** per account: `age`, `email_disposable`, `phone_verified`, `device_fresh`, `ip_proxy`, `loc_entropy`, `login_night`, `amount_mean`, `amount_std`, `txn_count`, `txn_freq` (all in [0,1]).
+- **3 edge types**: referral (account→account), device (account→device), IP (account→ip). Every world is seeded, so a given configuration always reproduces the same data.
+
+ADL-specific world state: every account carries a **`blocked` flag**, `blocked_round`, the last `decision`, whether it was `reviewed`, and its computed `risk`. `World.block(idx, round_idx)` performs the **soft removal** — the account stays in the `accounts` array (indexes never shift) but is excluded from everything downstream.
+
+### 15.3 Features (`backend/features.py`)
+
+Builds an `(n × 17)` matrix: the 11 intrinsics + 6 graph signals — `referral_count`, `degree`, `clustering`, `shared_device`, `shared_ip`, and `fraud_neighbor_ratio`. Crucially, `fraud_neighbor_ratio` uses only the labels the system has been *given* (supervised), never the hidden truth, so there is **no label leakage**. Accounts soft-removed by the ADL contribute an all-zero row and are dropped from every adjacency list, so removed fraud can never influence the detector or the graph statistics.
+
+### 15.4 The Adaptive Defensive Layer (`backend/adl.py`)
+
+This is the heart of the add-on — a stateful `AdaptiveDefense` object that owns the risk weights, the two adaptive thresholds, and a per-round defence history. Its `step()` performs one full defensive pass over the world each round.
+
+**Step 1 — risk components.** Five per-account indicators are computed:
+
+| Component | Meaning | Formula |
+|---|---|---|
+| `P_f` | fraud probability | detector output (`probs`) |
+| `C` | graph centrality | degree centrality, min-max normalized over active accounts |
+| `S` | fraud-ring participation | share of referral edges to suspicious nodes (flagged or known fraud) |
+| `V` | transaction velocity | `txn_count × txn_freq`, min-max normalized |
+| `A` | account trust | `1 − age` (older accounts → lower risk) |
+
+**Step 2 — weighted risk score:**
+
+```
+R = w1·P_f + w2·C + w3·S + w4·V + w5·A          with Σw = 1
+```
+
+Default weights: `w_pf = 0.45, w_centrality = 0.20, w_ring = 0.15, w_velocity = 0.10, w_trust = 0.10`. Weights are configurable and automatically re-normalized (non-negative, sum to 1) before scoring.
+
+**Step 3 — decision regions** (two adaptive thresholds):
+
+```
+R <  T1            →  Allow   (account is cleared)
+T1 ≤ R < T2        →  Review  (manual investigation; review_catch_rate of
+                               reviewed fraud is caught, the rest passes)
+R ≥ T2             →  Block   (account is soft-removed)
+```
+
+Defaults: `T1 = 0.40`, `T2 = 0.75`. The `Review` tier models a human-in-the-loop: `review_catch_rate` (default 0.5) of genuinely fraudulent accounts that fall into Review are caught (removed), the remainder slip through and join the survivors.
+
+**Step 4 — apply decisions.** Blocked (and review-caught) accounts are soft-removed via `World.block()` — they become invisible to features, metrics, training, and the generator. Only the **surviving fraud** (active + supervised + labelled fraud) is collected and handed to the intelligent generator as its learning material (`_collect_missed`).
+
+**Step 5 — adaptive threshold update.** For `policy='adaptive'`:
+
+```
+T_{r+1} = T_r + α·(false_block_rate − escape_rate)
+```
+
+- fraud escaping the defense is high → `delta < 0` → thresholds **fall** → stricter, more blocking;
+- genuine users being blocked is high → `delta > 0` → thresholds **rise** → more lenient.
+
+`α` (default 0.05) is the adaptation learning rate; thresholds are clamped (`T1 ∈ [0.05,0.95]`, `T2 ∈ [0.05,0.98]`, and `T2 ≥ T1 + 0.05`). The `fixed` policy keeps T1/T2 constant as a clean baseline for measuring the benefit of adaptation. Every round records `{round, t1, t2, escape, false_block}` into `threshold_history`.
+
+**Defence metrics logged per round** (`_metrics`): total/active/blocked counts, `block_rate`, `review_rate`, **`escape_rate`** (share of active fraud that survived), **`false_block_rate`** (share of genuine users blocked), `defense_precision` and `defense_recall` (fraud blocked / fraud total), `reviewed_fraud_caught`, `avg_risk`, a simulated **decision latency** (ms per transaction: allow 1 ms, review 40 ms, block 5 ms), a risk distribution summary (mean/median/p75/p95/max), and a **20-bin risk histogram** stacked by Allow/Review/Block — the raw material for the dashboard charts.
+
+### 15.5 The simulation engine (`backend/simulation.py`)
+
+`Simulation` runs the full ecosystem loop in a background thread:
+
+1. **Round 0** — build the seeded world (genuine base + initial fraud from the 5 templates), reveal a random `supervised_ratio` (default 0.25) of labels, train the detector, run the defense, evaluate.
+2. **Each round** — inject fresh genuine users; call the generator to synthesize new fraud (learned **only from survivors**); reveal a small **budget** of new-round ground truth (`budget_pos`/`budget_neg`, simulating manual review); retrain the detector **only on recently-created accounts** (`forget_window`, default 2 — so the detector goes stale as the attacker evolves); predict; run the ADL defense pass; evaluate overall + fresh-account metrics; log everything; feed surviving fraud into the generator's profile.
+3. Detector retraining uses an XGBoost `FraudDetector` (`detector.py`): `scale_pos_weight = neg/pos` class balancing, threshold chosen by grid-search maximizing **macro-F1** on a stratified validation split.
+4. Every round emits structured events (log lines, per-round metrics, generator diagnostics, defence records, threshold history) that are streamed to the frontend via an in-memory event list.
+
+**Generator diagnostics** (`gen_feat_div`, `gen_feat_shift`, `gen_ring_ratio`, `gen_new_edges`, `gen_gan_*` losses, `gen_missed_conf`) prove the generator creates genuinely *new* fraud — `gen_feat_div > 0` means non-identical samples, `gen_feat_shift > 0` means drift away from the seed pool, `gen_ring_ratio ≈ 0.5` shows rings/chains are built.
+
+### 15.6 The generator engines (`backend/generator/`)
+
+- **`IntelligentFraudGenerator`** — the add-on attacker. Maintains a `FraudProfile` (rolling `profile_window`-round memory of survived fraud: feature pool, strategy names, per-row confidence, and a bounded **familiar victims** set). Per round it either **trains a small PyTorch GAN** (`gan.py`: generator MLP noise→behaviour, discriminator MLP real/fake, minimax BCE, default 120 epochs) or falls back to **probabilistic resampling** (`sampler.py`: 50% seed-row + Gaussian drift, 50% pool-mean + drift, clamped to [0,1]), applies `diversity`, then **mutates** each row (`mutators.py`) into a traceable strategy name (`parent+tags`, e.g. `referral_farming+vpn+new_device`) and **builds structure** (`build_structure`): rings/referral chains among new nodes plus attachments to familiar victims. When nothing has been missed yet it seeds from mutated initial templates.
+- **`ReplayGenerator`** — the baseline: next round's fraud is an exact copy of the missed fraud (`gen_feat_div = 0`, `gen_feat_shift = 0`). Kept so the dashboard can compare naive vs. intelligent attacks.
+
+### 15.7 REST + SSE API (`backend/app.py`)
+
+| Endpoint | Purpose |
+|---|---|
+| `GET /api/health` | liveness + service name |
+| `GET /api/schema` | config defaults, feature schema, decision labels, risk components, ADL defaults, strategy templates |
+| `GET /api/datasets` | experiment presets: **Quick** (3 rounds, adaptive), **Quick fixed** (3 rounds, fixed thresholds), **No-ADL baseline** (8 rounds), **Standard** (8 rounds, adaptive), **Long** (10 rounds, adaptive) |
+| `POST /api/run` | launch a simulation (full config in JSON body) |
+| `GET /api/stream/<id>` | **Server-Sent Events** live feed (log lines, round results, defence records, threshold history) |
+| `GET /api/run/<id>` | snapshot status (state, rounds done, nodes, blocked, fraud) |
+| `GET /api/report/<id>` | full report (rounds, generator stats, profile summary, ADL state, threshold history) |
+| `GET /api/graph/<id>` | node/edge dump for the graph explorer (label, strategy, device/IP, blocked, decision, reviewed, risk, attributes) |
+| `GET /api/history` | metadata of every run in the session |
+
+### 15.8 Dashboard UI (`frontend/`)
+
+A canvas/vanilla-JS dashboard at **http://127.0.0.1:5050** with:
+
+- **Run builder** — generator mode (intelligent/replay), GAN vs. PROB, round/world budgets, and a dedicated **ADL panel**: enable/disable, `adaptive` vs. `fixed` threshold policy, T1, T2, adaptation `α`, `review_catch_rate`, and the five risk weights (with normalization).
+- **Live console + metrics** — per-round detector F1/AUC/REC/PRE, `gen_*` diagnostics, and the **defence summary**: blocked total, fraud escaped, escape rate, false-block rate, avg risk, decision latency, review-catch conversion, T1/T2.
+- **Charts** — stacked Allow/Review/Block bars per round, **escape vs. false-block** over time, **T1/T2 threshold trajectory** (shows the defense tightening when escape spikes and loosening when false blocks accumulate), per-component risk contribution, and a **risk-distribution histogram with T1/T2 markers** showing exactly where the thresholds cut the population.
+- **Graph explorer** — the evolving world rendered as a graph: blocked nodes shown hollow/dark, fraud/genuine colored, node tooltips showing risk, decision, strategy and block round; risk-colored nodes (green→red).
+- **History table** — every run compared side-by-side on F1/AUC, escape, false-block and defense recall.
+
+### 15.9 ADL config surface (defaults)
+
+`rounds=8, seed=7, base_accounts=500, initial_fraud=60, genuine_per_round=45, fraud_per_round=30, generator_mode=intelligent, gen_type=GAN, gan_epochs=120, gan_noise_dim=12, gan_hidden=32, diversity=1.0, conn_coef=0.6, ring_ratio=0.5, profile_window=5, supervised_ratio=0.25, forget_window=2, budget_pos=6, budget_neg=15` plus the ADL block: `adl_enabled=True, threshold_policy=adaptive, t1=0.40, t2=0.75, threshold_alpha=0.05, review_catch_rate=0.5, w_pf=0.45, w_centrality=0.20, w_ring=0.15, w_velocity=0.10, w_trust=0.10`.
+
+---
+
+## 16. How to run everything (verified on this machine)
 
 Environment: Python 3.11.9; venv at `multiround-promo-fraud\.venv` with all deps (dgl 2.0.0, torch 2.2.2+cpu, xgboost 2.0.3, flask, pandas, sklearn, etc.). Dataset `tolokers_bid`: 11,758 nodes / 1,049,758 edges / 10 features / 9,192 genuine / 2,566 fraud.
 
@@ -288,13 +443,24 @@ cd ..\dashboard
 # Companion demo app -> http://127.0.0.1:5050
 cd intelligent-fraud-generator
 run.bat   # (uses the same .venv)
+
+# Adaptive Defensive Layer add-on app -> http://127.0.0.1:5050
+cd adaptive-defensive-layer
+run.bat   # (uses the same .venv)
 ```
 
-**How to read results:** open `result\<config>\<timestamp>\meta.txt` (exact config) and the CSV files. Per-round metrics appear in the console as `Best Val: REC … PRE … MF1 … AUC …`. With `INTELLIGENT`, check the `gen_*` columns: `gen_feat_div > 0` and `gen_feat_shift > 0` prove the generator creates **new** fraud (Replay shows 0.0); `gen_ring_ratio ≈ 0.5` shows rings/chains are formed; rising `gen_missed_conf` shows the attacker learning to fool the detector.
+**How to read the main-framework results:** open `result\<config>\<timestamp>\meta.txt` (exact config) and the CSV files. Per-round metrics appear in the console as `Best Val: REC … PRE … MF1 … AUC …`. With `INTELLIGENT`, check the `gen_*` columns: `gen_feat_div > 0` and `gen_feat_shift > 0` prove the generator creates **new** fraud (Replay shows 0.0); `gen_ring_ratio ≈ 0.5` shows rings/chains are formed; rising `gen_missed_conf` shows the attacker learning to fool the detector.
+
+**How to read the ADL app results:** run an ADL preset and watch the live console/defence panel. Meaningful signals:
+- `escape_rate` trending **down** across rounds while `block_rate` stays moderate → the defense is containing the adaptive attacker.
+- `false_block_rate` staying low → the defense is not punishing genuine users.
+- The **T1/T2 trajectory** chart: when escape spikes the thresholds drop (stricter) the next round; when false blocks accumulate they rise (more lenient) — this is the adaptation law `T + α·(false_block − escape)` in action.
+- `gen_*` diagnostics on the attacker side: `gen_feat_div > 0` and `gen_feat_shift > 0` prove the generator still produces *new* fraud even against a defended world; `gen_missed_conf` rising means the attacker keeps fooling the detector into the Review/Allow tiers.
+- Compare **ADL adaptive vs. ADL fixed vs. no-ADL baseline** presets on the history table (F1/AUC, escape, false-block, defense recall) to quantify the value of the defensive layer.
 
 ---
 
-## 16. Key terminology glossary
+## 17. Key terminology glossary
 
 - **Round** — one detector-retrain + one adversary-injection cycle.
 - **Detector** — the GNN/XGB model being evaluated.
@@ -304,7 +470,16 @@ run.bat   # (uses the same .venv)
 - **REAGE / RANDOM** — training-data augmentation strategies.
 - **Add-on** — extra rule-based flags OR-ed into model predictions.
 - **`gen_*` columns** — diagnostics proving the generator produces diverse, shifted, ring-structured fraud.
+- **Adaptive Defensive Layer (ADL)** — the defense add-on; a stateful decision engine that scores every account with a weighted risk model and classifies it as Allow / Review / Block.
+- **Risk score R** — `w1·P_f + w2·C + w3·S + w4·V + w5·A`; the five weighted fraud indicators (probability, centrality, ring participation, velocity, inverse age).
+- **T1 / T2** — the two adaptive decision thresholds (`Allow` below T1, `Review` between, `Block` at/above T2).
+- **Threshold adaptation** — `T_{r+1} = T_r + α·(false_block_rate − escape_rate)`: stricter when fraud escapes, more lenient when genuine users are blocked.
+- **Allow / Review / Block** — the three ADL decisions; Review models a human-in-the-loop whose `review_catch_rate` determines how much reviewed fraud is actually caught.
+- **Soft removal / Blocked** — an account excluded from the world (features, metrics, training, generator seeds) but kept in the array so indexes never shift; blocked fraud can never reach the attacker again.
+- **Survivors** — fraud that passed the whole defense (detector + review + thresholds); the only material the intelligent generator learns from.
+- **Escape rate** — share of active fraud that survived the defense; **false-block rate** — share of genuine users blocked.
+- **Defense recall / precision** — of blocked accounts, the fraction that were really fraud, and of fraud, the fraction blocked.
 
 ---
 
-**Bottom line:** a pluggable multi-round adversarial framework (`detector ↔ adaptive attacker`) for graph-based promo-fraud detection, whose key contribution is the `INTELLIGENT` (GAN/PROB) fraud generator that learns from what slipped through and synthesizes genuinely new attack patterns — with full observability via `gen_*` metrics, reproducible JSON configs, CSV results, and two ways to watch it live (the research dashboard and the synthetic-world demo app).
+**Bottom line:** a pluggable multi-round adversarial framework for graph-based promo-fraud detection that grows from a two-player game into a full **attacker → detector → defense** ecosystem. Its key contributions are (A) the `INTELLIGENT` (GAN/PROB) fraud generator that learns from what slipped through and synthesizes genuinely new attack patterns, (B) full observability via `gen_*` metrics, reproducible JSON configs and CSV results, and (C) the **Adaptive Defensive Layer** — a weighted risk-scoring decision engine (Allow/Review/Block) that soft-removes caught fraud so the attacker can only learn from survivors, adapts its thresholds round after round to balance escape against false blocking, and exposes the entire arms race live through an interactive dashboard and graph explorer.
