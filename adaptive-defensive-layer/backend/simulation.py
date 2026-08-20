@@ -270,7 +270,9 @@ class Simulation:
                 refs = []
                 for dst in spec.get('referrals', []):
                     dst = int(dst)
-                    refs.append(base + dst if 0 <= dst < n_fraud else dst)
+                    refs.append(base + dst)
+                for dst in spec.get('victim_referrals', []):
+                    refs.append(int(dst))
                 spec['referrals'] = refs
             new_ids = [world.add_fraud(s, r) for s in specs]
             if specs:
@@ -448,7 +450,7 @@ class Simulation:
             familiar |= self._neighbours_of(i)
 
         self.generator.analyze(
-            np.array(feats) if feats else np.zeros((0, 11)),
+            np.array(feats) if feats else np.zeros((0, len(INTRINSIC_NAMES))),
             strategies, bases, familiar, confidences, r,
         )
 

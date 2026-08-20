@@ -78,9 +78,10 @@ def _iter_events(sim, after_index):
         pending = list(sim.events[after_index:])
     for ev in pending:
         yield f'data: {json.dumps(ev, default=_json_default)}\n\n'
-    final = {'type': 'state', 'state': sim.state,
-             'error': sim.error, 'finished': True}
-    yield f'data: {json.dumps(final, default=_json_default)}\n\n'
+    if not any(ev.get('type') == 'state' for ev in pending):
+        final = {'type': 'state', 'state': sim.state,
+                 'error': sim.error, 'finished': True}
+        yield f'data: {json.dumps(final, default=_json_default)}\n\n'
 
 
 # ---------------------------------------------------------------------------

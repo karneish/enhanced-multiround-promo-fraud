@@ -126,7 +126,7 @@ def build_structure(specs, rng, conn_coef=0.6, ring_ratio=0.5):
             continue
         k = max(1, min(int(round(len(victims) * conn_coef)), len(victims)))
         chosen = rng.choice(victims, size=k, replace=False).tolist()
-        specs[i]['referrals'].extend(chosen)
+        specs[i]['victim_referrals'] = list(chosen)
         for v in chosen:
             edges.append((i, v))
 

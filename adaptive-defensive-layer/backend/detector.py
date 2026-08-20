@@ -90,4 +90,10 @@ class FraudDetector:
     def predict(self, X):
         if self.model is None:
             raise RuntimeError('detector not trained')
-        return self.model.predict_proba(np.asarray(X))[:, 1]
+        proba = self.model.predict_proba(np.asarray(X))
+        proba = np.asarray(proba)
+        if proba.ndim == 1:
+            return proba
+        if proba.shape[1] == 1:
+            return proba[:, 0]
+        return proba[:, 1]

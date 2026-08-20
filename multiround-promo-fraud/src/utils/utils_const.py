@@ -5,6 +5,7 @@ from sklearn.metrics import average_precision_score
 from torch.optim import Adam
 
 from models.proposed_supervised.mixed import EmbedBoost
+from models.proposed_supervised.adaptive_detector import AdaptiveDetector
 
 from models.benchmarks_supervised.simple import GCN, GCNII, GraphSAGE, GIN, GAT
 from models.benchmarks_supervised.spectral import BWGNN, GHRN
@@ -31,6 +32,7 @@ MODEL_DICT = {
     'GHRN': GHRN,
     'XGB': GraphBoost,    
     'XGB-SP': EmbedBoost,
+    'ADAPTIVE': AdaptiveDetector,
 }
 
 
@@ -179,6 +181,15 @@ DEFAULT_MODEL_CONFIG = {
     'addon_perc': 0.05,
     'addon_round_window': 7,
     'addon_internal_agg': 'OR',
+
+    # Adaptive detector params
+    'adaptive_model_list': ['XGBoost', 'RandomForest', 'ExtraTrees', 'HistGradientBoosting', 'LogisticRegression', 'LightGBM'],
+    'adaptive_weights': None,
+    'adaptive_components': ['f1', 'recall', 'stability', 'historical'],
+    'adaptive_history_window': 5,
+    'adaptive_ema_alpha': 0.7,
+    'adaptive_stability_penalty': 0.5,
+    'adaptive_recall_importance': 1.0,
 }
 
 DEFAULT_STRAT_CONFIG = {  

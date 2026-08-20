@@ -104,14 +104,14 @@ def main(cname):
           if key == 'round_budget':
             main_config['round_budget_pos'] = int(val * pos)
             main_config['round_budget_neg'] = int(val * neg)
-          if key == 'loss':
+          elif key == 'loss':
             train_config['loss'] = LOSS_DICT[val]
-          if key == 'boost_agg_backbone_name':
+          elif key == 'boost_agg_backbone_name':
             model_config['boost_agg_backbone'] = BACKBONE_DICT[val]
-          if key == 'round_window':
+          elif key == 'round_window':
             model_config['round_window'] = val
             strat_config['augment_round_split'] = val + 1
-          if key == 'dropedge_prob':
+          elif key == 'dropedge_prob':
             strat_config['dropedge_prob'] = val
           
           # Else just copy
@@ -195,6 +195,14 @@ def main(cname):
           # Remove checkpoints
           exp.clean_temp_files()
 
+          # Save embedding before cleanup if needed
+          if main_config['save_embedding']:
+            exp.model.set_graph(exp.dset['graph'], round_num=(main_config['round_num']-1), device=main_config['device'])
+            embedding = exp.model.embed_nodes(exp.model.graph, exp.model.graph.ndata['feature'])
+            os.makedirs('../result/Z-temp', exist_ok=True)
+            torch.save(torch.linalg.vector_norm(embedding[:,int(embedding.shape[1] / 2):], ord=2, dim=1), f'../result/Z-temp/{ts}-{dset}-{suffix}-TEMP.pt')
+            torch.save(torch.linalg.vector_norm(embedding[:,:int(embedding.shape[1] / 2)], ord=2, dim=1), f'../result/Z-temp/{ts}-{dset}-{suffix}-NONTEMP.pt')
+
           print(f'>> Freeing memory')
           # Remove other stuffs
           del dataset 
@@ -225,12 +233,6 @@ def main(cname):
           os.makedirs(f'../result/{cname}/{ts}', exist_ok=True)
           final_df.to_csv(f'../result/{cname}/{ts}/{dset}-{suffix}-E.csv')
           outer_dfs.append(final_df)
-        
-        if main_config['save_embedding']:
-          exp.model.set_graph(exp.dset['graph'], round_num=(main_config['round_num']-1), device=main_config['device'])
-          embedding = exp.model.embed_nodes(exp.model.graph, exp.model.graph.ndata['feature'])
-          torch.save(torch.linalg.vector_norm(embedding[:,int(embedding.shape[1] / 2):], ord=2, dim=1), f'../result/Z-temp/{ts}-{dset}-{suffix}-TEMP.pt')
-          torch.save(torch.linalg.vector_norm(embedding[:,:int(embedding.shape[1] / 2)], ord=2, dim=1), f'../result/Z-temp/{ts}-{dset}-{suffix}-NONTEMP.pt')
     
     # Save overall artifacts
     if main_config['save_df']:

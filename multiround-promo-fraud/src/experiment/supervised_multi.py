@@ -606,7 +606,7 @@ STARTING MODEL TRAININGps_l
 -----------------------
 ''')
 
-            if self.model_config['model_name'] in ['XGB', 'XGB-SP']:
+            if self.model_config['model_name'] in ['XGB', 'XGB-SP', 'ADAPTIVE']:
                 res = self.model_train_classic(round_num)
             else:
                 res = self.model_train_nn(
@@ -861,8 +861,7 @@ STARTING MODEL TRAININGps_l
         verPrint(self.verbose, 2, f'{text} DATA SPLIT: {len(idx_train)} train rows ({dict(Counter(y_train.tolist()))}) | {len(idx_valid)} val rows ({dict(Counter(y_valid.tolist()))}) | {len(idx_test)} test rows ({dict(Counter(y_test.tolist()))})')
 
     def clean_temp_files(self):
-        for suffix in ['_epoch.py', '_hybrid_epoch.pt', '_round-M.json', '_round-T.json', '_round.json', '_round.pt']:
+        for suffix in ['_epoch.py', '_hybrid_epoch.pt', '_round-M.json', '_round-T.json', '_round.json', '_round.pt',
+                        '_adaptive_epoch.pt']:
             if os.path.exists(f"{self.temp_model_path}{suffix}"):
                 os.remove(f"{self.temp_model_path}{suffix}")
-            else:
-                print(f"The file {self.temp_model_path}{suffix} does not exist")

@@ -12,6 +12,7 @@ Two plug-in engines implement the "next round fraud" step:
 """
 
 import numpy as np
+from collections import Counter
 
 from ..world import INITIAL_STRATEGIES, INTRINSIC_NAMES
 from .profile import FraudProfile, _pairwise_mean_distance
@@ -235,7 +236,6 @@ class IntelligentFraudGenerator(_BaseGenerator):
         ring_edges = sum(1 for (a, b) in edges if b < len(specs))
         ext_edges = len(edges) - ring_edges
 
-        from collections import Counter
         base_counts = dict(Counter(s['base'] for s in specs))
 
         stats.update({
