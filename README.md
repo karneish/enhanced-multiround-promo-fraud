@@ -24,3 +24,12 @@ cd enhanced-multiround-promo-fraud
 ## License
 
 MIT License
+---
+
+## Contributing
+
+Pull requests are welcome!
+
+## Author
+
+**Karneish P**
