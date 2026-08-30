@@ -41,6 +41,9 @@ results/
 checkpoint/*
 !checkpoint/.gitkeep
 
+# TypeScript build cache
+*.tsbuildinfo
+
 # OS files
 .DS_Store
 Thumbs.db
