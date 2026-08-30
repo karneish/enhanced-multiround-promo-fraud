@@ -1,0 +1,335 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>TPNE-XGB · Multi-Round Promo Fraud Dashboard</title>
+<link rel="stylesheet" href="/static/style.css">
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+</head>
+<body>
+<header class="topbar">
+  <div class="topbar-inner">
+    <div class="brand">
+      <span class="logo">TPNE<span>-XGB</span></span>
+      <span class="tag">Multi-Round Promo Fraud · Live Console</span>
+    </div>
+    <nav class="tabs" id="tabs">
+      <button class="tab active" data-tab="dashboard">Live Dashboard</button>
+      <button class="tab" data-tab="launch">Launch Experiment</button>
+      <button class="tab" data-tab="results">Results</button>
+      <button class="tab" data-tab="graph">Graph Explorer</button>
+      <button class="tab" data-tab="about">About</button>
+    </nav>
+    <div class="sysbadge" id="sysbadge">checking…</div>
+  </div>
+</header>
+
+<main class="container">
+  <!-- ============================ DASHBOARD ============================ -->
+  <section id="tab-dashboard" class="tabpane active">
+    <div class="grid dash-top">
+      <div class="card stat-card" id="dash-state">
+        <div class="card-title">Run State</div>
+        <div id="dash-state-body" class="big idle">No active run</div>
+      </div>
+      <div class="card stat-card">
+        <div class="card-title">Current Trial / Round</div>
+        <div id="dash-trial" class="big">– / –</div>
+        <div class="sub" id="dash-rundesc"></div>
+      </div>
+      <div class="card stat-card">
+        <div class="card-title">Elapsed</div>
+        <div id="dash-elapsed" class="big">0s</div>
+        <div class="sub">failures <span id="dash-failures">0</span> · best val F1 <span id="dash-bestf1">–</span></div>
+      </div>
+      <div class="card stat-card">
+        <div class="card-title">Live Log Lines</div>
+        <div id="dash-lines" class="big">0</div>
+        <div class="sub">streaming via SSE</div>
+      </div>
+    </div>
+
+    <div class="card" style="margin-top:16px">
+      <div class="card-title">Validation metrics per round <span class="muted">(streaming)</span></div>
+      <div class="chart-wrap"><canvas id="live-chart"></canvas></div>
+    </div>
+
+    <div class="grid dash-bottom">
+      <div class="card log-card">
+        <div class="card-title">Live Log <span id="stream-status" class="pill">idle</span></div>
+        <pre id="live-log" class="log"></pre>
+      </div>
+      <div class="card">
+        <div class="card-title">Event Timeline</div>
+        <div id="timeline" class="timeline"><div class="muted">waiting for events…</div></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================ LAUNCH ============================ -->
+  <section id="tab-launch" class="tabpane">
+    <div class="grid launch-grid">
+      <div class="card">
+        <div class="card-title">Experiment configuration</div>
+
+        <label class="field">Experiment description
+          <input id="cfg-desc" value="Dashboard experiment" />
+        </label>
+
+        <div class="grid two">
+          <label class="field">Trials
+            <input id="cfg-trials" type="number" min="1" value="1" />
+          </label>
+          <label class="field">Failure limit
+            <input id="cfg-failure" type="number" min="0" value="2" />
+          </label>
+        </div>
+
+        <div class="field">
+          <label>Dataset(s)</label>
+          <div id="cfg-dsets" class="chips"></div>
+        </div>
+
+        <div class="field">
+          <label>Training dataset(s) <span class="muted">(NONE = self-train)</span></label>
+          <div id="cfg-traindsets" class="chips"></div>
+        </div>
+
+        <hr />
+
+        <div class="grid two">
+          <label class="field">Device
+            <select id="cfg-device">
+              <option value="cpu" selected>cpu</option>
+              <option value="cuda:0">cuda:0</option>
+            </select>
+          </label>
+          <label class="field">Exp type
+            <select id="cfg-exptype">
+              <option value="ADVER" selected>ADVER</option>
+              <option value="ADVOR">ADVOR</option>
+            </select>
+          </label>
+        </div>
+
+        <div class="grid two">
+          <label class="field">Rounds
+            <input id="cfg-rounds" type="number" min="1" value="2" />
+          </label>
+          <label class="field">Model
+            <select id="cfg-model"></select>
+          </label>
+        </div>
+
+        <div class="grid two">
+          <label class="field">Embed type
+            <select id="cfg-embed">
+              <option value="temporal" selected>temporal</option>
+              <option value="static">static</option>
+            </select>
+          </label>
+          <label class="field">Augmentation
+            <select id="cfg-augment"></select>
+          </label>
+        </div>
+
+        <div class="grid two">
+          <label class="field">Adversary choose
+            <select id="cfg-adverchoose"></select>
+          </label>
+          <label class="field">Adversary modify
+            <select id="cfg-advermod"></select>
+          </label>
+        </div>
+
+        <div id="gen-opts" class="hidden">
+          <div class="card-title" style="margin-top:8px">Intelligent Fraud Generator <span class="muted">(learns from missed fraud, then generates new strategies instead of copies)</span></div>
+          <div class="grid two">
+            <label class="field">Generator type
+              <select id="cfg-gentype">
+                <option value="GAN" selected>GAN (neural)</option>
+                <option value="PROB">PROB (probabilistic)</option>
+              </select>
+            </label>
+            <label class="field">GAN epochs / round
+              <input id="cfg-genepochs" type="number" min="1" value="300" />
+            </label>
+          </div>
+          <div class="grid two">
+            <label class="field">Feature diversity <span class="muted">(feat_coef)</span>
+              <input id="cfg-genfeatcoef" value="1.0" />
+            </label>
+            <label class="field">Connection budget <span class="muted">(conn_coef vs seed degree)</span>
+              <input id="cfg-genconncoef" value="0.5" />
+            </label>
+          </div>
+          <div class="grid two">
+            <label class="field">Fraud ring ratio
+              <input id="cfg-genringratio" value="0.5" />
+            </label>
+            <label class="field">History window <span class="muted">(rounds of fraud to learn from)</span>
+              <input id="cfg-genwindow" type="number" min="1" value="5" />
+            </label>
+          </div>
+        </div>
+
+        <div class="grid two">
+          <label class="field">Temporal agg
+            <select id="cfg-tagg">
+              <option value="weight" selected>weight</option>
+              <option value="mean_final">mean_final</option>
+            </select>
+          </label>
+          <label class="field">Norm
+            <select id="cfg-norm">
+              <option value="layer" selected>layer</option>
+              <option value="batch">batch</option>
+            </select>
+          </label>
+        </div>
+
+        <div class="grid two">
+          <label class="field">h_feats
+            <input id="cfg-hfeats" type="number" min="4" value="64" />
+          </label>
+          <label class="field">num_layers
+            <input id="cfg-layers" type="number" min="1" value="2" />
+          </label>
+        </div>
+
+        <div class="grid two">
+          <label class="field">round_window
+            <input id="cfg-window" type="number" min="1" value="7" />
+          </label>
+          <label class="field">Loss type
+            <input id="cfg-losstype" value="ndist" />
+          </label>
+        </div>
+
+        <div class="grid two">
+          <label class="field">alpha <span class="muted">(comma separated for sweep)</span>
+            <input id="cfg-alpha" value="0, 1" />
+          </label>
+          <label class="field">beta
+            <input id="cfg-beta" value="0, 1" />
+          </label>
+        </div>
+
+        <div class="grid three">
+          <label class="field">num_epoch
+            <input id="cfg-epoch" type="number" min="1" value="3" />
+          </label>
+          <label class="field">num_round_epoch
+            <input id="cfg-repoch" type="number" min="1" value="3" />
+          </label>
+          <label class="field">early_stopping
+            <input id="cfg-es" type="number" min="1" value="3" />
+          </label>
+        </div>
+
+        <label class="field">Raw JSON overrides <span class="muted">(merged on top of the form)</span>
+          <textarea id="cfg-json" rows="6" spellcheck="false">{}</textarea>
+        </label>
+
+        <div class="actions">
+          <button id="btn-launch" class="btn primary">Launch Experiment</button>
+          <button id="btn-jsonview" class="btn ghost">Preview Config JSON</button>
+        </div>
+        <div id="launch-msg" class="msg"></div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">Generated config</div>
+        <pre id="cfg-preview" class="log jsonpre"></pre>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================ RESULTS ============================ -->
+  <section id="tab-results" class="tabpane">
+    <div class="card">
+      <div class="card-title">Past experiments</div>
+      <div id="exp-list" class="exp-list"><div class="muted">loading…</div></div>
+    </div>
+    <div id="exp-detail" class="grid detail-grid hidden">
+      <div class="card">
+        <div class="card-title">Meta <button class="btn mini" id="btn-meta-toggle">show/hide</button></div>
+        <pre id="exp-meta" class="log hidden"></pre>
+      </div>
+      <div class="card">
+        <div class="card-title">Charts <span class="muted">(val_set_best across rounds)</span></div>
+        <div class="chart-wrap"><canvas id="res-chart"></canvas></div>
+      </div>
+    </div>
+    <div id="exp-table-wrap" class="card hidden">
+      <div class="card-title">Data table <button class="btn mini" id="btn-table-toggle">show/hide</button></div>
+      <div id="exp-table"></div>
+    </div>
+  </section>
+
+  <!-- ============================ GRAPH ============================ -->
+  <section id="tab-graph" class="tabpane">
+    <div class="card">
+      <div class="card-title">Graph explorer
+        <span class="muted">sample of tolokers_bid — label 1 (fraud) in red</span>
+        <div class="right">
+          <select id="graph-dset"></select>
+          <label class="inline">nodes <input id="graph-n" type="number" min="30" max="600" value="180" style="width:70px" /></label>
+          <button class="btn mini" id="btn-graph-reload">re-sample</button>
+        </div>
+      </div>
+      <div class="graph-wrap">
+        <canvas id="graph-canvas" width="1000" height="620"></canvas>
+        <div id="graph-info" class="graph-info"></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================ ABOUT ============================ -->
+  <section id="tab-about" class="tabpane">
+    <div class="card">
+      <div class="card-title">About this project</div>
+      <p>
+        <b>TPNE-XGB</b> implements a multi-rounded adversarial scenario for graph-based
+        promo fraud detection. Each round an adversary injects new fraudulent nodes
+        (greedy selection + replay/perturbation), and the detector is retrained on
+        the growing graph. This dashboard lets you configure, launch, watch live, and
+        explore results without touching config files.
+      </p>
+      <p>
+        <b>Intelligent Fraud Generator add-on</b> — instead of merely copying the fraud that
+        escaped detection, the <code>INTELLIGENT</code> adversary modifier first <i>analyzes</i>
+        the missed fraud (features, degrees, familiar targets), <i>learns/evolves</i> a GAN or a
+        probabilistic model over it across rounds, then <i>generates brand-new fraud strategies</i>
+        (new device/amount/timing features + fraud rings / referral chains). Diversity and edge
+        stats (<code>gen_*</code>) are logged to the results CSV for every round.
+      </p>
+      <table class="kv">
+        <tr><th></th><th>Simple generator (REPLAY / PERTURB)</th><th>INTELLIGENT add-on</th></tr>
+        <tr><td>Next-round fraud</td><td>duplicate / lightly-edited copy</td><td>brand-new strategy sampled from learned model</td></tr>
+        <tr><td>Attacker adaptation</td><td>none (same method reused)</td><td>evolves each round from successful fraud</td></tr>
+        <tr><td>Graph structure</td><td>kept as-is</td><td>fraud rings / referral chains + rewired targets</td></tr>
+        <tr><td>Supervision richness</td><td>repeats old patterns</td><td>teaches unseen &amp; future fraud patterns</td></tr>
+        <tr><td>Observability</td><td>—</td><td><code>gen_*</code> diagnostics logged per round</td></tr>
+      </table>
+      <table class="kv">
+        <tr><td>Models</td><td id="about-models">—</td></tr>
+        <tr><td>Augmentation</td><td id="about-augments">—</td></tr>
+        <tr><td>Adversary choose</td><td id="about-adverchoose">—</td></tr>
+        <tr><td>Adversary modify</td><td id="about-advermod">—</td></tr>
+        <tr><td>Datasets</td><td id="about-datasets">—</td></tr>
+        <tr><td>Backend</td><td id="about-backend">—</td></tr>
+      </table>
+      <p class="muted">
+        Citation: Prasetya, H. A., Liu, X., Murata, T., Matono, A.
+        “A multi-rounded adversarial scenario for graph-based promo fraud detection.”
+        Social Network Analysis and Mining, 2025.
+      </p>
+    </div>
+  </section>
+</main>
+
+<script src="/static/app.js"></script>
+</body>
+</html>
