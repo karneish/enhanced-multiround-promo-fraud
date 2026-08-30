@@ -1,0 +1,53 @@
+{
+    "TRIAL_NUM": 1,
+    "FAILURE_LIMIT": 3,
+
+    "EXPERIMENT_DESC": "Minimal Quick Test - 6-Model Ensemble on tolokers_bid",
+    "LIST_DSET": ["tolokers_bid"],
+    "LIST_TRAIN_DSET": ["NONE"],
+    "EXP_DICT": {
+        "device": ["cpu"],
+        "exp_type": ["ADVER"],
+        "round_num": [2],
+
+        "model_name": ["ADAPTIVE"],
+        "round_reset_model": [false],
+        "embed_type": ["mixed"],
+        
+        "h_feats": [64],
+        "num_layers": [2],
+        "round_window": [7],
+
+        "num_epoch": [5],
+        "num_round_epoch": [3],
+        "early_stopping": [3],
+
+        "loss_type": ["ndist"],
+        "norm_name": ["layer"],
+        "temporal_agg": ["weight"],
+
+        "alpha": [1],
+        "beta": [1],
+
+        "augment_name": ["REAGE"],
+
+        "adver_choose_name": ["GREEDY"],
+        "adver_mod_name": ["INTELLIGENT"],
+        "adver_gen_type": ["GAN"],
+        "adver_gen_epochs": [10],
+        "adver_gen_feat_coef": [1.0],
+        "adver_gen_conn_coef": [0.5],
+        "adver_gen_ring_ratio": [0.5],
+
+        "addon_name": ["DFEAT"],
+        "addon_perc": [0.05],
+        "addon_round_window": [3],
+        "addon_internal_agg": ["OR"],
+
+        "adaptive_model_list": [["XGBoost", "RandomForest", "ExtraTrees", "HistGradientBoosting", "LogisticRegression", "LightGBM"]],
+        "adaptive_components": [["f1", "recall", "stability", "historical"]],
+        "adaptive_history_window": [5],
+        "adaptive_ema_alpha": [0.7],
+        "adaptive_recall_importance": [1.0]
+    }
+}
