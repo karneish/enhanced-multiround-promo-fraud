@@ -1,0 +1,285 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Adaptive Ensemble Detector · Multi-Round Promo Fraud</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<div class="bg" aria-hidden="true">
+  <div class="orb orb-a"></div>
+  <div class="orb orb-b"></div>
+  <div class="orb orb-c"></div>
+  <div class="grid-overlay"></div>
+  <div class="scanline"></div>
+</div>
+
+<header class="topbar">
+  <div class="brand">
+    <div class="logo-wrap">
+      <svg viewBox="0 0 44 44" class="logo-svg" aria-hidden="true">
+        <defs>
+          <linearGradient id="lg1" x1="0" y1="0" x2="1" y2="1">
+            <stop offset="0%" stop-color="#60a5fa"/>
+            <stop offset="100%" stop-color="#1e3a5f"/>
+          </linearGradient>
+        </defs>
+        <rect x="2" y="2" width="40" height="40" rx="12" fill="url(#lg1)"/>
+        <path d="M10 28 L16 16 L22 22 L32 12" fill="none" stroke="#fff" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+        <circle cx="10" cy="28" r="2" fill="#fff"/><circle cx="16" cy="16" r="2" fill="#fff"/>
+        <circle cx="22" cy="22" r="2" fill="#fff"/><circle cx="32" cy="12" r="2" fill="#fff"/>
+        <circle cx="32" cy="12" r="4" fill="none" stroke="#fbbf24" stroke-width="1.5" opacity="0.7"/>
+      </svg>
+    </div>
+    <div class="brand-text">
+      <h1>Adaptive Ensemble Detector</h1>
+      <p class="sub">3-model dynamic-weight ensemble · 17-D features · multi-round adversarial</p>
+    </div>
+  </div>
+  <div class="status" id="serverStatus">
+    <span class="dot"></span>
+    <span class="status-text">connecting...</span>
+  </div>
+</header>
+
+<nav class="tabs" id="tabs">
+  <button class="tab active" data-tab="live"><span class="tab-ico">&#9679;</span>Live</button>
+  <button class="tab" data-tab="launch"><span class="tab-ico">&#9650;</span>Launch</button>
+  <button class="tab" data-tab="models"><span class="tab-ico">&#9638;</span>Models</button>
+  <button class="tab" data-tab="graph"><span class="tab-ico">&#9851;</span>Graph</button>
+  <button class="tab" data-tab="history"><span class="tab-ico">&#9661;</span>History</button>
+  <button class="tab" data-tab="about"><span class="tab-ico">&#9432;</span>About</button>
+  <span class="tab-indicator" id="tabIndicator"></span>
+</nav>
+
+<main>
+
+  <!-- ================= LIVE ================= -->
+  <section id="tab-live" class="panel active">
+    <div class="toolbar glass">
+      <label class="select-wrap">
+        <select id="liveRunSelect"><option value="">-- select a run --</option></select>
+      </label>
+      <button id="liveRefreshBtn" class="btn ghost">Refresh</button>
+      <label class="chk"><input type="checkbox" id="liveAutoScroll" checked><span class="tgl"></span>autoscroll</label>
+      <div class="spacer"></div>
+      <span class="live-pill" id="liveRunLabel"></span>
+    </div>
+
+    <div class="round-track glass" id="roundTracker"></div>
+
+    <div class="metric-grid" id="liveMetrics"></div>
+
+    <div class="row">
+      <div class="card grow">
+        <div class="card-head"><h3>Ensemble performance</h3><span class="legend" id="perfLegend"></span></div>
+        <div id="livePerfChart" class="chart"></div>
+      </div>
+      <div class="card grow">
+        <div class="card-head"><h3>Model weights per round</h3><span class="legend" id="weightLegend"></span></div>
+        <div id="liveWeightChart" class="chart"></div>
+      </div>
+    </div>
+
+    <div class="row">
+      <div class="card grow">
+        <div class="card-head"><h3>Individual model F1 history</h3><span class="legend" id="indivLegend"></span></div>
+        <div id="liveIndivChart" class="chart"></div>
+      </div>
+      <div class="card grow">
+        <div class="card-head"><h3>ADS scores per model</h3></div>
+        <div id="liveAdsScores" class="chart"></div>
+      </div>
+    </div>
+
+    <div class="row">
+      <div class="card grow">
+        <div class="card-head"><h3>Event log <span class="muted" id="liveLogCount"></span></h3></div>
+        <div id="liveLog" class="log"></div>
+      </div>
+      <div class="card grow">
+        <div class="card-head"><h3>Fraud strategies (new round)</h3></div>
+        <div id="liveStrategies" class="chart"></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= LAUNCH ================= -->
+  <section id="tab-launch" class="panel">
+    <div class="row">
+      <div class="card grow">
+        <div class="card-head"><h3>Experiment presets</h3></div>
+        <div id="presets" class="presets"></div>
+      </div>
+      <div class="card grow">
+        <div class="card-head"><h3>Ensemble overview</h3></div>
+        <div class="ensemble-overview" id="ensembleOverview"></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-head"><h3>Configuration</h3></div>
+      <div class="form-grid" id="configForm"></div>
+    </div>
+
+    <div class="card launch-card">
+      <input type="text" id="cfgDescribe" class="text-input full" placeholder="Name this experiment...">
+      <button id="launchBtn" class="btn primary">
+        <svg viewBox="0 0 24 24" class="ico"><path d="M5 3l14 9-14 9V3z" fill="currentColor"/></svg>
+        Launch simulation
+      </button>
+      <span id="launchError" class="error"></span>
+    </div>
+
+    <div class="card">
+      <div class="card-head"><h3>Active / recent runs</h3></div>
+      <div class="table-wrap">
+        <table class="table" id="runsTable">
+          <thead><tr><th>id</th><th>describe</th><th>rounds</th><th>done</th><th>state</th><th></th></tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= MODELS ================= -->
+  <section id="tab-models" class="panel">
+    <div class="card">
+      <div class="card-head"><h3>3-Model Ensemble Architecture</h3></div>
+      <div class="arch-diagram" id="archDiagram">
+        <div class="arch-row">
+          <div class="arch-box embedder"><div class="arch-label">Feature Matrix</div><div class="arch-sub">17-D graph + behavior features</div></div>
+        </div>
+        <div class="arch-arrow">&#8595;</div>
+        <div class="arch-row three">
+          <div class="arch-box model" data-model="XGBoost"><div class="arch-label">XGBoost</div><div class="arch-sub">gradient boosting</div><div class="arch-weight" id="arch-w-XGBoost"></div></div>
+          <div class="arch-box model" data-model="HistGradientBoosting"><div class="arch-label">HistGB</div><div class="arch-sub">300 iterations</div><div class="arch-weight" id="arch-w-HistGradientBoosting"></div></div>
+          <div class="arch-box model" data-model="ExtraTrees"><div class="arch-label">Extra Trees</div><div class="arch-sub">300 trees</div><div class="arch-weight" id="arch-w-ExtraTrees"></div></div>
+        </div>
+        <div class="arch-arrow">&#8595;</div>
+        <div class="arch-row">
+          <div class="arch-box ads"><div class="arch-label">Adaptive Detector Score</div><div class="arch-sub">F1 + Recall + Stability + Historical</div></div>
+        </div>
+        <div class="arch-arrow">&#8595;</div>
+        <div class="arch-row">
+          <div class="arch-box ensemble"><div class="arch-label">Dynamic Weighted Ensemble</div><div class="arch-sub">Weighted average of all model probabilities</div></div>
+        </div>
+        <div class="arch-arrow">&#8595;</div>
+        <div class="arch-row">
+          <div class="arch-box output"><div class="arch-label">Final Fraud Probability</div><div class="arch-sub">Account A: 0.94 (Fraud) &middot; Account B: 0.12 (Legitimate)</div></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="row">
+      <div class="card grow">
+        <div class="card-head"><h3>Per-model F1 over rounds</h3></div>
+        <div id="modelF1Chart" class="chart"></div>
+      </div>
+      <div class="card grow">
+        <div class="card-head"><h3>Per-model AUC over rounds</h3></div>
+        <div id="modelAucChart" class="chart"></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-head"><h3>Per-model metrics (latest round)</h3></div>
+      <div class="table-wrap">
+        <table class="table" id="modelTable">
+          <thead><tr><th>Model</th><th>F1</th><th>Recall</th><th>Precision</th><th>AUC</th><th>ADS Score</th><th>Weight</th><th>Trend</th></tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= GRAPH ================= -->
+  <section id="tab-graph" class="panel">
+    <div class="toolbar glass">
+      <label class="select-wrap">
+        <select id="graphRunSelect"><option value="">-- select a run --</option></select>
+      </label>
+      <span class="divider"></span>
+      <label class="chk"><input type="checkbox" id="graphShowGenuine" checked><span class="tgl"></span>genuine</label>
+      <label class="chk"><input type="checkbox" id="graphShowFraud" checked><span class="tgl"></span>fraud</label>
+      <label class="chk"><input type="checkbox" id="graphShowReferral" checked><span class="tgl"></span>referral</label>
+      <label class="chk"><input type="checkbox" id="graphShowShared" checked><span class="tgl"></span>shared dev/IP</label>
+      <label class="chk"><input type="checkbox" id="graphColorRound" checked><span class="tgl"></span>colour by round</label>
+      <div class="spacer"></div>
+      <span class="muted" id="graphStats"></span>
+    </div>
+    <div class="graph-card glass">
+      <div class="graph-legend">
+        <span><i class="sw genuine"></i>genuine</span>
+        <span><i class="sw fraud"></i>fraud</span>
+        <span><i class="sw refer"></i>referral</span>
+        <span><i class="sw shared"></i>shared device/IP</span>
+      </div>
+      <canvas id="graphCanvas" width="1100" height="640"></canvas>
+      <div class="graph-tip" id="graphTip"></div>
+    </div>
+  </section>
+
+  <!-- ================= HISTORY ================= -->
+  <section id="tab-history" class="panel">
+    <div class="card">
+      <div class="card-head"><h3>All runs this session</h3></div>
+      <div class="table-wrap">
+        <table class="table" id="historyTable">
+          <thead><tr><th>id</th><th>describe</th><th>rounds</th><th>state</th><th>started</th><th>actions</th></tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-head"><h3>Run comparison (Ensemble F1 / AUC)</h3></div>
+      <div id="compareChart" class="chart"></div>
+    </div>
+  </section>
+
+  <!-- ================= ABOUT ================= -->
+  <section id="tab-about" class="panel">
+    <div class="card about-card">
+      <div class="card-head"><h3>What this system does</h3></div>
+      <p>This dashboard implements the <b>Adaptive Multi-Model Detection Layer</b> — replacing the base paper's fixed XGBoost classifier with an ensemble of 3 ML models that dynamically reweight based on per-round performance.</p>
+
+      <div class="card-head"><h3>Architecture</h3></div>
+      <div class="pipeline">
+        <div class="stage"><span>17-D features</span><i></i></div>
+        <div class="stage"><span>3 ML models</span><i></i></div>
+        <div class="stage"><span>evaluate each</span><i></i></div>
+        <div class="stage"><span>compute ADS</span><i></i></div>
+        <div class="stage"><span>dynamic weights</span><i></i></div>
+        <div class="stage"><span>ensemble predict</span><i></i></div>
+        <div class="stage"><span>evolved fraud</span><i></i></div>
+        <div class="stage"><span>retrain &amp; repeat</span></div>
+      </div>
+
+      <div class="card-head"><h3>Adaptive Detector Score (ADS)</h3></div>
+      <p>Each model is scored on 4 components (equal 25% weight):</p>
+      <ul class="tick-list">
+        <li><b>F1-score</b> — current round's macro-F1 on validation</li>
+        <li><b>Recall</b> — current round's recall (configurable importance)</li>
+        <li><b>Stability</b> — 1 - min(std/mean) of F1 over rolling window</li>
+        <li><b>Historical</b> — exponential moving average of F1 (alpha=0.7)</li>
+      </ul>
+      <p>Weights are normalized so they sum to 1.0 each round.</p>
+
+      <div class="card-head"><h3>The 3 Models</h3></div>
+      <div class="model-grid" id="aboutModelGrid"></div>
+
+      <div class="card-head"><h3>Key Research Question</h3></div>
+      <div class="research-q">
+        <p>Does adaptive multi-model detection perform better and remain more stable than the fixed TPNE-XGBoost approach when fraud continuously evolves?</p>
+      </div>
+    </div>
+  </section>
+
+</main>
+
+<div id="toasts" class="toasts"></div>
+<script src="app.js"></script>
+</body>
+</html>
