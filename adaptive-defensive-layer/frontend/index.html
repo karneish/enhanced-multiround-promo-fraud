@@ -1,0 +1,402 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Adaptive Defensive Layer &middot; Multi-Round Promo Fraud</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<!-- ===== animated background ===== -->
+<div class="bg" aria-hidden="true">
+  <div class="orb orb-a"></div>
+  <div class="orb orb-b"></div>
+  <div class="orb orb-c"></div>
+  <div class="grid"></div>
+  <div class="scanline"></div>
+</div>
+
+<!-- ===== top bar ===== -->
+<header class="topbar">
+  <div class="brand">
+    <div class="logo-wrap">
+      <svg viewBox="0 0 44 44" class="logo-svg" aria-hidden="true">
+        <defs>
+          <linearGradient id="lg1" x1="0" y1="0" x2="1" y2="1">
+            <stop offset="0" stop-color="#95d5b2"/>
+            <stop offset="1" stop-color="#1b4332"/>
+          </linearGradient>
+        </defs>
+        <rect x="2" y="2" width="40" height="40" rx="12" fill="url(#lg1)"/>
+        <path d="M14 14l10 8 4-5 6 7-6 7-4-5-10 8V14z" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/>
+        <circle cx="34" cy="12" r="3" fill="#fff"/>
+      </svg>
+    </div>
+    <div class="brand-text">
+      <h1>Adaptive Defensive Layer</h1>
+      <p class="sub">attacker &middot; detector &middot; defense ecosystem &mdash; ADL extension of the TPNE-XGB promo-fraud framework</p>
+    </div>
+  </div>
+  <div class="status" id="serverStatus">
+    <span class="dot"></span>
+    <span class="status-text">connecting&hellip;</span>
+  </div>
+</header>
+
+<!-- ===== tabs ===== -->
+<nav class="tabs" id="tabs">
+  <button class="tab active" data-tab="live"><span class="tab-ico">&#9679;</span>Live</button>
+  <button class="tab" data-tab="defense"><span class="tab-ico">&#9830;</span>Defense</button>
+  <button class="tab" data-tab="launch"><span class="tab-ico">&#9650;</span>Launch</button>
+  <button class="tab" data-tab="history"><span class="tab-ico">&#9661;</span>History</button>
+  <button class="tab" data-tab="graph"><span class="tab-ico">&#9851;</span>Graph</button>
+  <button class="tab" data-tab="about"><span class="tab-ico">&#9432;</span>About</button>
+  <span class="tab-indicator" id="tabIndicator"></span>
+</nav>
+
+<main>
+
+  <!-- ================= LIVE ================= -->
+  <section id="tab-live" class="panel active">
+    <div class="toolbar glass">
+      <label class="select-wrap">
+        <svg viewBox="0 0 24 24" class="ico"><path d="M4 6h16M4 12h16M4 18h10" stroke="currentColor" stroke-width="2" stroke-linecap="round" fill="none"/></svg>
+        <select id="liveRunSelect"><option value="">— select a run —</option></select>
+      </label>
+      <button id="liveRefreshBtn" class="btn ghost">
+        <svg viewBox="0 0 24 24" class="ico"><path d="M20 11A8 8 0 1 0 18.6 15M20 4v7h-7" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        Refresh
+      </button>
+      <label class="chk"><input type="checkbox" id="liveAutoScroll" checked><span class="tgl"></span>autoscroll</label>
+      <div class="spacer"></div>
+      <span class="live-pill" id="liveRunLabel"></span>
+    </div>
+
+    <!-- round progress tracker -->
+    <div class="round-track glass" id="roundTracker"></div>
+
+    <div class="metric-grid" id="liveMetrics"></div>
+
+    <div class="row">
+      <div class="card grow">
+        <div class="card-head">
+          <h3>Detector performance per round</h3>
+          <span class="legend" id="perfLegend"></span>
+        </div>
+        <div id="livePerfChart" class="chart"></div>
+      </div>
+      <div class="card grow">
+        <div class="card-head">
+          <h3>Defence metrics per round</h3>
+          <span class="legend" id="defLegend"></span>
+        </div>
+        <div id="liveDefChart" class="chart"></div>
+      </div>
+    </div>
+
+    <div class="row">
+      <div class="card grow">
+        <div class="card-head">
+          <h3>Generator diagnostics</h3>
+          <span class="legend" id="genLegend"></span>
+        </div>
+        <div id="liveGenChart" class="chart"></div>
+      </div>
+      <div class="card grow">
+        <div class="card-head">
+          <h3>Event log <span class="muted" id="liveLogCount"></span></h3>
+        </div>
+        <div id="liveLog" class="log"></div>
+      </div>
+    </div>
+
+    <div class="row">
+      <div class="card grow">
+        <div class="card-head"><h3>Evolved strategies (last round)</h3></div>
+        <div id="liveStrategies" class="chart"></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= DEFENSE ================= -->
+  <section id="tab-defense" class="panel">
+    <div class="toolbar glass">
+      <label class="select-wrap">
+        <svg viewBox="0 0 24 24" class="ico"><path d="M12 3l8 3v5c0 5-3.4 8.6-8 10-4.6-1.4-8-5-8-10V6l8-3z" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        <select id="defenseRunSelect"><option value="">— select a run —</option></select>
+      </label>
+      <button id="defenseRefreshBtn" class="btn ghost">
+        <svg viewBox="0 0 24 24" class="ico"><path d="M20 11A8 8 0 1 0 18.6 15M20 4v7h-7" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        Refresh
+      </button>
+      <div class="spacer"></div>
+      <span class="live-pill" id="defenseRunLabel"></span>
+    </div>
+
+    <div class="row">
+      <div class="card grow">
+        <div class="card-head"><h3>ADL policy state</h3></div>
+        <div id="adlState" class="adl-state"></div>
+      </div>
+      <div class="card grow">
+        <div class="card-head"><h3>Risk weights <span class="muted">R = w&#8321;&middot;P&#8347; + w&#8322;&middot;C + w&#8323;&middot;S + w&#8324;&middot;V + w&#8325;&middot;A</span></h3></div>
+        <div id="adlWeights" class="weights"></div>
+      </div>
+    </div>
+
+    <div class="row">
+      <div class="card grow">
+        <div class="card-head">
+          <h3>Risk score distribution (last round)</h3>
+          <span class="legend" id="riskLegend"></span>
+        </div>
+        <div id="riskDistChart" class="chart"></div>
+      </div>
+      <div class="card grow">
+        <div class="card-head"><h3>Decisions per round (Allow / Review / Block)</h3></div>
+        <div id="decisionChart" class="chart"></div>
+      </div>
+    </div>
+
+    <div class="row">
+      <div class="card grow">
+        <div class="card-head">
+          <h3>Defence trade-off metrics</h3>
+          <span class="legend" id="defenseLegend"></span>
+        </div>
+        <div id="defenseChart" class="chart"></div>
+      </div>
+      <div class="card grow">
+        <div class="card-head">
+          <h3>Adaptive thresholds (T&#8321; / T&#8322;)</h3>
+          <span class="legend" id="threshLegend"></span>
+        </div>
+        <div id="thresholdChart" class="chart"></div>
+      </div>
+    </div>
+
+    <div class="row">
+      <div class="card grow">
+        <div class="card-head">
+          <h3>Risk components (mean per round)</h3>
+          <span class="legend" id="riskCompLegend"></span>
+        </div>
+        <div id="riskCompChart" class="chart"></div>
+      </div>
+      <div class="card grow">
+        <div class="card-head"><h3>Decision detail</h3></div>
+        <div class="table-wrap">
+          <table class="table" id="defenseTable">
+            <thead><tr>
+              <th>r</th><th>allow</th><th>review</th><th>block</th>
+              <th>fraud blk</th><th>fraud esc</th><th>legit blk</th>
+              <th>escape</th><th>false blk</th><th>dP</th><th>dR</th><th>latency</th>
+            </tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= LAUNCH ================= -->
+  <section id="tab-launch" class="panel">
+    <div class="row">
+      <div class="card grow">
+        <div class="card-head"><h3>Experiment preset</h3></div>
+        <div id="presets" class="presets"></div>
+      </div>
+      <div class="card grow">
+        <div class="card-head"><h3>Generator mode</h3></div>
+        <div class="seg" id="modeSeg">
+          <button class="seg-btn active" data-val="intelligent">intelligent</button>
+          <button class="seg-btn" data-val="replay">replay (baseline)</button>
+        </div>
+        <div class="seg" id="typeSeg">
+          <button class="seg-btn active" data-val="GAN">GAN</button>
+          <button class="seg-btn" data-val="PROB">probabilistic</button>
+        </div>
+        <p class="hint" id="modeHint"></p>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-head"><h3>Configuration</h3></div>
+      <div class="form-grid" id="configForm"></div>
+    </div>
+
+    <div class="card">
+      <div class="card-head">
+        <h3>Adaptive Defensive Layer</h3>
+        <span class="legend" id="adlEnabledLegend"></span>
+      </div>
+      <div class="row adl-ctl">
+        <label class="chk"><input type="checkbox" id="adlEnabled" checked><span class="tgl"></span>ADL enabled</label>
+        <div class="seg" id="policySeg">
+          <button class="seg-btn active" data-val="adaptive">adaptive thresholds</button>
+          <button class="seg-btn" data-val="fixed">fixed thresholds</button>
+        </div>
+        <span class="muted" id="policyHint"></span>
+      </div>
+      <div class="form-grid" id="adlForm"></div>
+    </div>
+
+    <div class="card launch-card">
+      <div class="card-head"><h3>Description</h3></div>
+      <input type="text" id="cfgDescribe" class="text-input full" placeholder="Name this experiment…">
+      <button id="launchBtn" class="btn primary">
+        <svg viewBox="0 0 24 24" class="ico"><path d="M5 3l14 9-14 9V3z" fill="currentColor"/></svg>
+        Launch simulation
+      </button>
+      <span id="launchError" class="error"></span>
+    </div>
+
+    <div class="card">
+      <div class="card-head"><h3>Active / recent runs</h3></div>
+      <div class="table-wrap">
+        <table class="table" id="runsTable">
+          <thead><tr>
+            <th>id</th><th>describe</th><th>mode</th><th>model</th>
+            <th>ADL</th><th>rounds</th><th>done</th><th>state</th><th></th>
+          </tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= HISTORY ================= -->
+  <section id="tab-history" class="panel">
+    <div class="card">
+      <div class="card-head"><h3>All runs this session</h3></div>
+      <div class="table-wrap">
+        <table class="table" id="historyTable">
+          <thead><tr>
+            <th>id</th><th>describe</th><th>mode</th><th>model</th>
+            <th>ADL</th><th>rounds</th><th>state</th><th>started</th><th>actions</th>
+          </tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-head"><h3>Run comparison (F1 / AUC / escape / false-block)</h3></div>
+      <div id="compareChart" class="chart"></div>
+    </div>
+  </section>
+
+  <!-- ================= GRAPH ================= -->
+  <section id="tab-graph" class="panel">
+    <div class="toolbar glass">
+      <label class="select-wrap">
+        <select id="graphRunSelect"><option value="">— select a run —</option></select>
+      </label>
+      <button id="graphLoadBtn" class="btn ghost">
+        <svg viewBox="0 0 24 24" class="ico"><path d="M3 12h4l2-7 4 14 2-7h6" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        Load graph
+      </button>
+      <span class="divider"></span>
+      <label class="chk"><input type="checkbox" id="graphShowGenuine" checked><span class="tgl"></span>genuine</label>
+      <label class="chk"><input type="checkbox" id="graphShowFraud" checked><span class="tgl"></span>fraud</label>
+      <label class="chk"><input type="checkbox" id="graphShowBlocked" checked><span class="tgl"></span>blocked</label>
+      <label class="chk"><input type="checkbox" id="graphShowReferral" checked><span class="tgl"></span>referral</label>
+      <label class="chk"><input type="checkbox" id="graphShowShared" checked><span class="tgl"></span>shared device/IP</label>
+      <label class="chk"><input type="checkbox" id="graphColorRisk" checked><span class="tgl"></span>colour by risk</label>
+      <div class="spacer"></div>
+      <span class="muted" id="graphStats"></span>
+    </div>
+    <div class="graph-card glass">
+      <div class="graph-legend">
+        <span><i class="sw genuine"></i>genuine</span>
+        <span><i class="sw fraud"></i>fraud</span>
+        <span><i class="sw blocked"></i>blocked</span>
+        <span><i class="sw refer"></i>referral</span>
+        <span><i class="sw shared"></i>shared device/IP</span>
+      </div>
+      <canvas id="graphCanvas" width="1100" height="640"></canvas>
+      <div class="graph-tip" id="graphTip"></div>
+    </div>
+  </section>
+
+  <!-- ================= ABOUT ================= -->
+  <section id="tab-about" class="panel">
+    <div class="card about-card">
+      <div class="card-head"><h3>What the Adaptive Defensive Layer adds</h3></div>
+      <p>
+        The multi-round promo-fraud framework (TPNE-XGB) already models an
+        <b>adaptive attacker</b> (intelligent generator) against an
+        <b>adaptive detector</b>. This platform adds the missing third actor: an
+        <b>adaptive defense</b>. Real institutions never just predict a fraud
+        probability &mdash; they decide what to <i>do</i> about it. The ADL is the
+        operational decision engine that converts
+        <code>P(fraud)</code> into a concrete action:
+      </p>
+      <div class="decision-flow">
+        <div class="df-step"><span class="df-ball allow"></span><b>Allow</b><small>risk &lt; T&#8321;</small></div>
+        <div class="df-step"><span class="df-ball review"></span><b>Review</b><small>T&#8321; &le; risk &lt; T&#8322;</small></div>
+        <div class="df-step"><span class="df-ball block"></span><b>Block</b><small>risk &ge; T&#8322;</small></div>
+      </div>
+      <p>
+        The risk score combines five fraud indicators:
+      </p>
+      <ul class="tick-list">
+        <li><b>P&#8347;</b> &mdash; fraud probability predicted by the detector</li>
+        <li><b>C</b> &mdash; graph centrality (fraudsters sit in important graph positions)</li>
+        <li><b>S</b> &mdash; fraud-ring participation (connections to suspicious nodes)</li>
+        <li><b>V</b> &mdash; transaction velocity (volume over a short window)</li>
+        <li><b>A</b> &mdash; account trust score (older accounts = lower risk)</li>
+      </ul>
+      <p>
+        The thresholds <b>T&#8321;/T&#8322;</b> are not fixed: after every round they move
+        based on the trade-off between <b>fraud escape</b> and <b>false blocking</b>
+        (<code>T&prime; = T + &alpha; &middot; (false_block &minus; escape)</code>).
+        If too much fraud slips through the defense tightens; if too many genuine
+        users are blocked it loosens.
+      </p>
+
+      <div class="card-head"><h3>The feedback loop</h3></div>
+      <p>
+        The critical design decision: <b>blocked fraud never reaches the attacker</b>.
+        It is soft-removed from the graph, excluded from every feature, metric and
+        training split, and never appears in the generator&rsquo;s memory. Only fraud
+        that <i>survives</i> the whole defense becomes the next round&rsquo;s training
+        material &mdash; so the intelligent generator must keep evolving against an
+        active defense that is itself learning.
+      </p>
+
+      <div class="card-head"><h3>Pipeline</h3></div>
+      <div class="pipeline">
+        <div class="stage"><span>build world</span><i></i></div>
+        <div class="stage"><span>train detector</span><i></i></div>
+        <div class="stage"><span>predict P&#8347;</span><i></i></div>
+        <div class="stage"><span>risk score R</span><i></i></div>
+        <div class="stage"><span>allow / review / block</span><i></i></div>
+        <div class="stage"><span>remove blocked</span><i></i></div>
+        <div class="stage"><span>generator learns from survivors</span><i></i></div>
+        <div class="stage"><span>synthesise new fraud</span><i></i></div>
+        <div class="stage"><span>adapt thresholds</span><i></i></div>
+        <div class="stage"><span>retrain &amp; repeat</span></div>
+      </div>
+
+      <div class="card-head"><h3>Honesty notes</h3></div>
+      <ul class="tick-list">
+        <li>Ground truth is <b>budgeted</b>: only a few new accounts are &ldquo;manually reviewed&rdquo; each round; the rest stay unseen (limited labelling).</li>
+        <li>The <b>Review</b> decision is probabilistic: a configurable fraction (<code>review_catch_rate</code>) of reviewed fraud is caught, the rest is allowed after investigation.</li>
+        <li>Decision latency is <b>simulated</b>: per-transaction cost differs by action (review is the most expensive), exposing the operational cost of a cautious defense.</li>
+        <li>Run the same config with <b>fixed thresholds</b> or <b>ADL disabled</b> as baselines &mdash; the History tab compares F1 / AUC / escape / false-block side by side.</li>
+        <li>All data is synthetic; this is an independent implementation of the ADL concept.</li>
+      </ul>
+
+      <div class="card-head"><h3>Built-in strategies</h3></div>
+      <div id="strategyCards" class="strategy-grid"></div>
+    </div>
+  </section>
+
+</main>
+
+<div id="toasts" class="toasts"></div>
+
+<script src="app.js"></script>
+</body>
+</html>
