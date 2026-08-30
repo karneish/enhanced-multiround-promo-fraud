@@ -1,0 +1,265 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Intelligent Fraud Generator &middot; Multi-Round Promo Fraud</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<!-- ===== animated background ===== -->
+<div class="bg" aria-hidden="true">
+  <div class="orb orb-a"></div>
+  <div class="orb orb-b"></div>
+  <div class="orb orb-c"></div>
+  <div class="grid"></div>
+  <div class="scanline"></div>
+</div>
+
+<!-- ===== top bar ===== -->
+<header class="topbar">
+  <div class="brand">
+    <div class="logo-wrap">
+      <svg viewBox="0 0 44 44" class="logo-svg" aria-hidden="true">
+        <defs>
+          <linearGradient id="lg1" x1="0" y1="0" x2="1" y2="1">
+            <stop offset="0" stop-color="#95d5b2"/>
+            <stop offset="1" stop-color="#1b4332"/>
+          </linearGradient>
+        </defs>
+        <rect x="2" y="2" width="40" height="40" rx="12" fill="url(#lg1)"/>
+        <path d="M12 26 l7 -8 5 5 8 -9" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+        <circle cx="12" cy="26" r="2.4" fill="#fff"/>
+      </svg>
+    </div>
+    <div class="brand-text">
+      <h1>Intelligent Fraud Generator</h1>
+      <p class="sub">multi-round adversarial add-on &middot; TPNE-XGB promo-fraud framework</p>
+    </div>
+  </div>
+  <div class="status" id="serverStatus">
+    <span class="dot"></span>
+    <span class="status-text">connecting&hellip;</span>
+  </div>
+</header>
+
+<!-- ===== tabs ===== -->
+<nav class="tabs" id="tabs">
+  <button class="tab active" data-tab="live"><span class="tab-ico">&#9679;</span>Live</button>
+  <button class="tab" data-tab="launch"><span class="tab-ico">&#9650;</span>Launch</button>
+  <button class="tab" data-tab="history"><span class="tab-ico">&#9661;</span>History</button>
+  <button class="tab" data-tab="graph"><span class="tab-ico">&#9851;</span>Graph</button>
+  <button class="tab" data-tab="about"><span class="tab-ico">&#9432;</span>About</button>
+  <span class="tab-indicator" id="tabIndicator"></span>
+</nav>
+
+<main>
+
+  <!-- ================= LIVE ================= -->
+  <section id="tab-live" class="panel active">
+    <div class="toolbar glass">
+      <label class="select-wrap">
+        <svg viewBox="0 0 24 24" class="ico"><path d="M4 6h16M4 12h16M4 18h10" stroke="currentColor" stroke-width="2" stroke-linecap="round" fill="none"/></svg>
+        <select id="liveRunSelect"><option value="">— select a run —</option></select>
+      </label>
+      <button id="liveRefreshBtn" class="btn ghost">
+        <svg viewBox="0 0 24 24" class="ico"><path d="M20 11A8 8 0 1 0 18.6 15M20 4v7h-7" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        Refresh
+      </button>
+      <label class="chk"><input type="checkbox" id="liveAutoScroll" checked><span class="tgl"></span>autoscroll</label>
+      <div class="spacer"></div>
+      <span class="live-pill" id="liveRunLabel"></span>
+    </div>
+
+    <!-- round progress tracker -->
+    <div class="round-track glass" id="roundTracker"></div>
+
+    <div class="metric-grid" id="liveMetrics"></div>
+
+    <div class="row">
+      <div class="card grow">
+        <div class="card-head">
+          <h3>Detector performance per round</h3>
+          <span class="legend" id="perfLegend"></span>
+        </div>
+        <div id="livePerfChart" class="chart"></div>
+      </div>
+      <div class="card grow">
+        <div class="card-head">
+          <h3>Generator diagnostics</h3>
+          <span class="legend" id="genLegend"></span>
+        </div>
+        <div id="liveGenChart" class="chart"></div>
+      </div>
+    </div>
+
+    <div class="row">
+      <div class="card grow">
+        <div class="card-head">
+          <h3>Event log <span class="muted" id="liveLogCount"></span></h3>
+        </div>
+        <div id="liveLog" class="log"></div>
+      </div>
+      <div class="card grow">
+        <div class="card-head"><h3>Evolved strategies (last round)</h3></div>
+        <div id="liveStrategies" class="chart"></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= LAUNCH ================= -->
+  <section id="tab-launch" class="panel">
+    <div class="row">
+      <div class="card grow">
+        <div class="card-head"><h3>Experiment preset</h3></div>
+        <div id="presets" class="presets"></div>
+      </div>
+      <div class="card grow">
+        <div class="card-head"><h3>Generator mode</h3></div>
+        <div class="seg" id="modeSeg">
+          <button class="seg-btn active" data-val="intelligent">intelligent</button>
+          <button class="seg-btn" data-val="replay">replay (baseline)</button>
+        </div>
+        <div class="seg" id="typeSeg">
+          <button class="seg-btn active" data-val="GAN">GAN</button>
+          <button class="seg-btn" data-val="PROB">probabilistic</button>
+        </div>
+        <p class="hint" id="modeHint"></p>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-head"><h3>Configuration</h3></div>
+      <div class="form-grid" id="configForm"></div>
+    </div>
+
+    <div class="card launch-card">
+      <div class="card-head"><h3>Description</h3></div>
+      <input type="text" id="cfgDescribe" class="text-input full" placeholder="Name this experiment…">
+      <button id="launchBtn" class="btn primary">
+        <svg viewBox="0 0 24 24" class="ico"><path d="M5 3l14 9-14 9V3z" fill="currentColor"/></svg>
+        Launch simulation
+      </button>
+      <span id="launchError" class="error"></span>
+    </div>
+
+    <div class="card">
+      <div class="card-head"><h3>Active / recent runs</h3></div>
+      <div class="table-wrap">
+        <table class="table" id="runsTable">
+          <thead><tr>
+            <th>id</th><th>describe</th><th>mode</th><th>model</th>
+            <th>rounds</th><th>done</th><th>state</th><th></th>
+          </tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= HISTORY ================= -->
+  <section id="tab-history" class="panel">
+    <div class="card">
+      <div class="card-head"><h3>All runs this session</h3></div>
+      <div class="table-wrap">
+        <table class="table" id="historyTable">
+          <thead><tr>
+            <th>id</th><th>describe</th><th>mode</th><th>model</th>
+            <th>rounds</th><th>state</th><th>started</th><th>actions</th>
+          </tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-head"><h3>Run comparison (F1 / AUC)</h3></div>
+      <div id="compareChart" class="chart"></div>
+    </div>
+  </section>
+
+  <!-- ================= GRAPH ================= -->
+  <section id="tab-graph" class="panel">
+    <div class="toolbar glass">
+      <label class="select-wrap">
+        <select id="graphRunSelect"><option value="">— select a run —</option></select>
+      </label>
+      <button id="graphLoadBtn" class="btn ghost">
+        <svg viewBox="0 0 24 24" class="ico"><path d="M3 12h4l2-7 4 14 2-7h6" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        Load graph
+      </button>
+      <span class="divider"></span>
+      <label class="chk"><input type="checkbox" id="graphShowGenuine" checked><span class="tgl"></span>genuine</label>
+      <label class="chk"><input type="checkbox" id="graphShowFraud" checked><span class="tgl"></span>fraud</label>
+      <label class="chk"><input type="checkbox" id="graphShowReferral" checked><span class="tgl"></span>referral</label>
+      <label class="chk"><input type="checkbox" id="graphShowShared" checked><span class="tgl"></span>shared device/IP</label>
+      <label class="chk"><input type="checkbox" id="graphColorRound" checked><span class="tgl"></span>colour by round</label>
+      <div class="spacer"></div>
+      <span class="muted" id="graphStats"></span>
+    </div>
+    <div class="graph-card glass">
+      <div class="graph-legend">
+        <span><i class="sw genuine"></i>genuine</span>
+        <span><i class="sw fraud"></i>fraud</span>
+        <span><i class="sw refer"></i>referral</span>
+        <span><i class="sw shared"></i>shared device/IP</span>
+      </div>
+      <canvas id="graphCanvas" width="1100" height="640"></canvas>
+      <div class="graph-tip" id="graphTip"></div>
+    </div>
+  </section>
+
+  <!-- ================= ABOUT ================= -->
+  <section id="tab-about" class="panel">
+    <div class="card about-card">
+      <div class="card-head"><h3>What this add-on does</h3></div>
+      <p>
+        The multi-round promo-fraud framework (TPNE-XGB) replays &ldquo;missed&rdquo; fraud
+        verbatim into the next round. This add-on replaces that step with an
+        <b>intelligent fraud generator</b> that learns from the fraud which
+        escaped detection and evolves <i>new</i> strategies:
+      </p>
+      <ul class="tick-list">
+        <li><b>new devices / VPN IPs</b> — the attacker moves to fresh equipment instead of re-using it</li>
+        <li><b>amount &amp; timing shifts</b> — behaviour drifts away from what the detector already knows</li>
+        <li><b>fraud rings &amp; referral chains</b> — new accounts are wired into collaborative structures</li>
+        <li><b>victim re-attack</b> — previously abused referrers are targeted again</li>
+      </ul>
+      <p>
+        Two generator modes are available so the original behaviour stays
+        comparable: <b>replay</b> (the baseline clone) and <b>intelligent</b>
+        (GAN or probabilistic synthesis). Every round the dashboard shows
+        feature diversity, feature shift, ring ratio, new edges and the
+        evolved strategy names — full diagnostics.
+      </p>
+
+      <div class="card-head"><h3>Pipeline</h3></div>
+      <div class="pipeline">
+        <div class="stage"><span>build world</span><i></i></div>
+        <div class="stage"><span>train detector</span><i></i></div>
+        <div class="stage"><span>predict</span><i></i></div>
+        <div class="stage"><span>find missed fraud</span><i></i></div>
+        <div class="stage"><span>generator learns</span><i></i></div>
+        <div class="stage"><span>synthesise new fraud</span><i></i></div>
+        <div class="stage"><span>update graph</span><i></i></div>
+        <div class="stage"><span>retrain &amp; repeat</span></div>
+      </div>
+
+      <div class="card-head"><h3>Honesty notes</h3></div>
+      <ul class="tick-list">
+        <li>Ground truth is <b>budgeted</b>: only a few new accounts are &ldquo;manually reviewed&rdquo; each round; the rest stay unseen (limited labelling).</li>
+        <li>All data is synthetic; this is an independent implementation and copies no source from the original framework.</li>
+      </ul>
+
+      <div class="card-head"><h3>Built-in strategies</h3></div>
+      <div id="strategyCards" class="strategy-grid"></div>
+    </div>
+  </section>
+
+</main>
+
+<div id="toasts" class="toasts"></div>
+
+<script src="app.js"></script>
+</body>
+</html>
