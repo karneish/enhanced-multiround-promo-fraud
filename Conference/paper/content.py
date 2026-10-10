@@ -48,10 +48,11 @@ ABSTRACT = (
     "and all warm-started so that a round costs additional boosting rounds rather than a full "
     "refit. Measurements are reported on the <i>tolokers</i> <i>bid</i> interaction graph "
     "(11,758 nodes, 1,049,758 edges, 21.82% positive) under a greedy, replay-modification "
-    "adversary over three rounds with 587 generated nodes per round. Under this protocol AMDL "
-    "reaches an average on-round F<sub>1</sub> of 0.391 and a final-round recall of 0.523, against "
-    "0.120 and 0.063 for a single XGBoost head evaluated on the identical embedding &#8212; a "
-    "3.3&#215; improvement in on-round F<sub>1</sub> attributable to the detection layer alone. The "
+    "adversary over three rounds with 587 generated nodes per round. Under this protocol the matched "
+    "ablation &#8212; the same embedding, the same scenario and the same budget &#8212; raises the "
+    "average on-round F<sub>1</sub> from 0.119 for a single XGBoost head to 0.263 for AMDL, a 2.2&#215; "
+    "improvement attributable to the detection layer alone, and the best configuration measured reaches "
+    "0.391 with a final-round recall of 0.523. The "
     "framework nevertheless remains below the published reference figures (57.09 &#177; 2.33 average "
     "on-round F<sub>1</sub> over five trials), and two nominally identical runs of the ensemble arm "
     "differ by a factor of four at a single-trial setting. Encoder pre-training on the three "
@@ -125,6 +126,8 @@ BODY = [
     ("h", (2, "2.1 Fraud Detection in Transaction Streams")),
     ("p", (
         "The dominant operational setting for promo and payment abuse is a transaction stream. "
+        "Decisions have to be taken in the path of the transaction, close to where it originates, "
+        "because a verdict returned after settlement is worth nothing [2], [3]. "
         "Benign traffic is extremely imbalanced &#8212; on the IEEE-CIS transaction corpus used in "
         "this work the positive rate observed on the evaluation slices was 2.56% to 2.87% &#8212; "
         "so accuracy is uninformative and precision-recall behaviour, recall at a fixed review "
@@ -135,13 +138,17 @@ BODY = [
         "source-independent profile columns of this kind together with fifteen native columns, "
         "giving twenty-seven features before any embedding contribution is added.")),
     ("p", (
-        "Tree ensembles dominate this setting. XGBoost [4] and LightGBM [5] provide regularised, "
+        "Tree ensembles dominate this setting. Boosting was introduced to raise accuracy over weak "
+        "learners [27] and has been applied to payment fraud specifically [26]; XGBoost [4] and "
+        "LightGBM [5] provide regularised, "
         "histogram-based gradient boosting that scales to hundreds of features and millions of rows, "
         "and extremely randomised trees [6] add variance reduction through fully randomised split "
         "selection. Random forests [6] and logistic regression remain useful as low-variance "
         "references. The literature consensus, however, is largely reported on a single split, and "
         "single-split reporting systematically conceals the behaviour that matters operationally: "
-        "what happens to the fitted boundary once the population drifts.")),
+        "what happens to the fitted boundary once the population drifts. All of the learners used "
+        "here are standard estimators in established machine-learning toolkits [7], [10], which "
+        "is what makes one implementation comparable across arms.")),
 
     ("h", (2, "2.2 Graph Representation for Fraud")),
     ("p", (
@@ -149,11 +156,11 @@ BODY = [
         "coupon codes and behavioural templates, so a representation that sees only a single "
         "account's own history discards the evidence that actually separates fraud from unusual "
         "but legitimate behaviour. Graph-based fraud detection encodes accounts as nodes and these "
-        "shared artefacts as edges, and has become an established family [11]-[17], [31], [32]. Heterogeneous "
-        "graph networks represent typed relations directly [11]; attention-based propagation "
+        "shared artefacts as edges, and has become an established family [11]-[17], [25], [31], [32]. Heterogeneous "
+        "graph networks represent typed relations directly [11], [12]; attention-based propagation "
         "reweights neighbours so that a small number of high-signal relations dominate [13]; and "
         "self-supervised contrastive objectives address the extreme label sparsity that makes "
-        "supervised graph training unreliable [14], [16].")),
+        "supervised graph training unreliable [14]-[16].")),
     ("p", (
         "TPNE [1] belongs to this family with a specific emphasis: it is self-supervised, so it "
         "requires no labels, and it is explicitly temporal, producing a static representation "
@@ -162,11 +169,14 @@ BODY = [
         "temporal halves to occupy non-overlapping subspaces, and maximisation encourages the "
         "temporal half to spread over the window rather than collapse onto its mean. Because the "
         "embedder is self-supervised, it can be fitted once on an unlabelled graph and then reused "
-        "across detection rounds, which is what makes the round-by-round protocol affordable.")),
+        "across detection rounds, which is what makes the round-by-round protocol affordable. Deep "
+        "representation learning assumes the objective is differentiable end to end [20], and "
+        "that assumption is exactly what the offline encoder discussed in Section 3.2 does not "
+        "currently satisfy.")),
 
     ("h", (2, "2.3 Adaptive Adversarial Evaluation")),
     ("p", (
-        "Standard fraud benchmarks measure robustness to noise, not to a motivated opponent. The "
+        "Standard fraud benchmarks measure robustness to noise, not to a motivated opponent [24]. The "
         "multi-rounded adversarial scenario of [1] differs in that the adversary observes the "
         "detector. It maintains three graphs per round: a test graph containing everything used for "
         "evaluation in that round, a query graph containing only the nodes generated in that round, "
@@ -182,7 +192,10 @@ BODY = [
         "The greedy seed selector is the component that makes the scenario adversarial rather than "
         "merely noisy. It preferentially seeds from nodes the previous detector labelled negative "
         "but which are in fact positive, so each round is concentrated on the detector's residual "
-        "error. Detection quality that does not improve under this selector is not evidence of "
+        "error. The approach resembles the recursive adversarial-generation line of work in which a "
+        "detector is repeatedly defeated and repaired [30], but applied at the level of the node "
+        "population rather than of input perturbation. Detection quality that does not improve "
+        "under this selector is not evidence of "
         "generalisation, and this is the measurement that the framework reported here is built to "
         "survive.")),
 
@@ -371,8 +384,8 @@ BODY = [
     ("tab", {
         "caption": "Table 1. Comparison of detection configurations under the multi-round "
                    "adversarial scenario on the <i>tolokers</i> <i>bid</i> graph.",
-        "head": ["Configuration", "Adversarial policy", "Representation", "Detection head",
-                 "Per-round cost", "Principal limitation"],
+        "head": ["Configuration", "Adversarial<br/>policy", "Node<br/>representation",
+                 "Detection<br/>head", "Per-round<br/>cost", "Principal limitation"],
         "rows": [
             ["TPNE-XGB<br/>reference [1]",
              "greedy / replay /<br/>reage",
@@ -451,8 +464,8 @@ BODY = [
         "<b>Finding 2 &#8212; the ensemble does not exceed the reference.</b> Under the "
         "replay-modification scenario the strongest configuration measured reaches an average "
         "on-round F<sub>1</sub> of 0.391 and a final-round recall of 0.523, with per-round F<sub>1</sub> "
-        "of 0.280, 0.464 and 0.430. The published reference is 57.09 &#177; 2.33. The gap is "
-        "roughly fifteen points and it is not closed by this work. Three causes are documented in "
+        "of 0.280, 0.464 and 0.429. The published reference is 57.09 &#177; 2.33. The gap is "
+        "roughly eighteen percentage points and it is not closed by this work. Three causes are documented in "
         "the repository: the scenario is a re-implementation and has not been verified numerically "
         "identical to the authors'; the classifier differs from the authors' single head with up to "
         "five hundred boosting rounds per round; and for the offline arm the objective values are "
@@ -464,14 +477,14 @@ BODY = [
         "of the ensemble arm with no pre-training, the same support-graph split and the same "
         "60,000-label buffer returned average on-round F<sub>1</sub> values of 0.263 and 0.064. The "
         "configuration was nominally identical. Until this variance is controlled by fixing the "
-        "seed set and repeating each arm at least five times, no single-trial difference in this "
+        "seed set and repeating each arm at least five times [33], no single-trial difference in this "
         "study should be treated as a result, including the 2.2&#215; in Finding 1. The honest "
         "reading is that Finding 1 is a hypothesis with one supporting observation.")),
 
     ("p", (
         "<b>Finding 4 &#8212; gradient pre-training of the encoder did not pay for itself.</b> "
         "Pre-training the encoder on the three objectives for sixty epochs raised round-0 F<sub>1</sub> "
-        "marginally, from 0.572 to 0.567, and left average on-round F<sub>1</sub> statistically "
+        "marginally, from 0.568 to 0.567, and left average on-round F<sub>1</sub> statistically "
         "indistinguishable at 0.387 against 0.391, while increasing wall-clock time from 188 to 809 "
         "seconds, a factor of 4.3. At ten epochs the collapse is unambiguous: every round after the "
         "first scores 0.00. The mechanism is interpretable. The encoder is fitted to the round-0 "

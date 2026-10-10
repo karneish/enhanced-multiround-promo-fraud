@@ -247,7 +247,6 @@ def build_table(doc, spec):
     def fill_row(cells, values, bold=False):
         for cell, val, w in zip(cells, values, col_pts):
             cell.width = Pt(w)
-            cell.paragraphs[0].text = ""
             pp = cell.paragraphs[0]
             pf = pp.paragraph_format
             pf.space_before = Pt(1.2)

@@ -91,6 +91,27 @@ class Head:
         return (self.predict_proba(X) >= thr).astype(int)
 
 
+
+def tune_threshold(head, X, y, grid=None):
+    """Pick the F1-optimal decision threshold on a held-out validation split.
+
+    Fitted on validation only - never on the query graph (which is what is
+    scored) and never on the retention set (which measures forgetting). Tuning
+    on either would be leakage, and the paper's headline numbers would not be
+    comparable.
+    """
+    from sklearn.metrics import f1_score
+    if grid is None:
+        grid = [round(0.05 * i, 2) for i in range(1, 20)]
+    probs = head.predict_proba(X)
+    best, best_f1 = 0.5, -1.0
+    for t in grid:
+        f1 = f1_score(y, (probs >= t).astype(int), zero_division=0)
+        if f1 > best_f1:
+            best, best_f1 = t, f1
+    return best
+
+
 def run(arm, rounds, seed, pretrain_epochs, pretrain_epochs_round,
         trials, buffer_max, h_feats, round_window):
     graph = load_tolokers()
@@ -139,11 +160,26 @@ def run(arm, rounds, seed, pretrain_epochs, pretrain_epochs_round,
                           for e in evs])
         # the author's ratio_test is 0.20, so 80% is available for training;
         # holding out 40% starved the classifier
-        split = int(float(os.environ.get("TRAIN_FRAC", 0.8)) * len(y_all))
+        # three-way split: train / val (threshold only) / test (retention).
+        # The paper's ratio_val is 0.20; the threshold must never be tuned on
+        # the query sets or on the retention set.
+        n = len(y_all)
+        n_test = int(0.20 * n)
+        n_val = int(0.20 * n)
+        split = n - n_test - n_val          # train end
+        val_slice = slice(split, split + n_val)
         X0 = E0[:len(evs)]
         head.fit(X0[:split], y_all[:split])
-        f1_init = _metrics(y_all[split:], head.predict(X0[split:]))[0]
-        rec0 = {"f1_initial": f1_init, "f1_round0_nodes": f1_init}
+        # ---- threshold selection on the validation split only
+        thr = 0.5 if os.environ.get("NO_TUNE") else tune_threshold(
+            head, X0[val_slice], y_all[val_slice])
+        print(f"  threshold: {thr:.3f} "
+              f"(val F1 {_metrics(y_all[val_slice], head.predict(X0[val_slice], thr))[0]*100:.2f}, "
+              f"val F1@0.5 {_metrics(y_all[val_slice], head.predict(X0[val_slice], 0.5))[0]*100:.2f})",
+              flush=True)
+        f1_init = _metrics(y_all[split:], head.predict(X0[split:], thr))[0]
+        rec0 = {"f1_initial": f1_init, "f1_round0_nodes": f1_init,
+                "threshold": thr}
 
         per_round = []
         for r in range(1, rounds + 1):
@@ -160,8 +196,8 @@ def run(arm, rounds, seed, pretrain_epochs, pretrain_epochs_round,
             yr = np.array([int(e["label"]) if e["label"] is not None else 0
                            for e in ev_r])
             Xr = E[np.array([int(e["raw"]["node_id"]) for e in ev_r])]
-            pq = head.predict(Xr)
-            ret = head.predict(X0[split:])
+            pq = head.predict(Xr, thr)
+            ret = head.predict(X0[split:], thr)
             per_round.append({
                 "round": r,
                 "f1_query": _metrics(yr, pq)[0],
@@ -205,16 +241,35 @@ def main():
     ap.add_argument("--buffer-max", type=int, default=60000)
     ap.add_argument("--h-feats", type=int, default=64)
     ap.add_argument("--round-window", type=int, default=7)
+    ap.add_argument("--scale-pos-weight", type=float, default=0.0,
+                    help="positive class weight; 0 = let the detector decide")
+    ap.add_argument("--no-tune-threshold", action="store_true",
+                    help="use the default 0.5 threshold instead of tuning "
+                         "it on the validation split")
     ap.add_argument("--out", default=None)
     a = ap.parse_args()
 
+    if a.scale_pos_weight:
+        DEFAULT_CONFIG.setdefault("scale_pos_weight",
+                                  a.scale_pos_weight)
     print(f"arm={a.arm} rounds={a.rounds} trials={a.trials} "
           f"pre={a.pretrain_epochs}/{a.pretrain_epochs_round} "
           f"buffer={a.buffer_max} h={a.h_feats} W={a.round_window}", flush=True)
+    if a.no_tune_threshold:
+        os.environ["NO_TUNE"] = "1"
     recs = run(a.arm, a.rounds, a.seed, a.pretrain_epochs,
                a.pretrain_epochs_round, a.trials, a.buffer_max,
                a.h_feats, a.round_window)
     summary = rt_metrics(recs)
+    # Strict parity with the base paper: its `round_num = 3` run emits query
+    # rows for rounds 1 and 2 only, so RT-avg_f1_t>0 is a mean over exactly
+    # those two rounds. Averaging our three rounds would be more generous.
+    import statistics as _st
+    strict = [_st.mean([r["f1_query"] for r in t["rounds"][:2]]) * 100
+              for t in recs if len(t.get("rounds", [])) >= 2]
+    if strict:
+        summary["RT-avg_f1_strict_parity"] = _st.mean(strict) / 100.0
+        summary["strict_per_trial"] = [round(x, 2) for x in strict]
     summary.update(arm=a.arm, trials=a.trials, pretrain_epochs=a.pretrain_epochs,
                    buffer_max=a.buffer_max, per_trial=recs)
     out = a.out or f"reports/upgraded_{a.arm.replace('+','_')}.json"
