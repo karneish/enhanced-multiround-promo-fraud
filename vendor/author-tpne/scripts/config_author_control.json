@@ -1,0 +1,32 @@
+{
+    "TRIAL_NUM": 5,
+    "FAILURE_LIMIT": 10,
+    "EXPERIMENT_DESC": "Author control run - reproduce TPNE-XGB on tolokers_bid (paper config)",
+    "LIST_DSET": ["tolokers_bid"],
+    "LIST_TRAIN_DSET": ["NONE"],
+    "EXP_DICT": {
+        "exp_type": ["ADVER"],
+        "round_num": [3],
+
+        "model_name": ["XGB-SP"],
+        "round_reset_model": [false],
+        "embed_type": ["temporal"],
+
+        "h_feats": [64],
+        "num_layers": [2],
+        "round_window": [7],
+
+        "num_epoch": [500],
+        "num_round_epoch": [300],
+        "early_stopping": [75],
+
+        "loss_type": ["ndist"],
+        "norm_name": ["layer"],
+        "temporal_agg": ["weight"],
+
+        "alpha": [1],
+        "beta": [1],
+
+        "augment_name": ["REAGE"]
+    }
+}

@@ -1,0 +1,75 @@
+{
+  "RT-f1_0_start": 0.5557404326123128,
+  "RT-f1_0_end": 0.5500568585751409,
+  "RT-f1_0_gap": -0.005683574037171901,
+  "RT-avg_f1_t>0": 0.0,
+  "RT-recall_0": 0.0,
+  "n_rounds": 3,
+  "per_trial": [
+    {
+      "round0": {
+        "round": 0,
+        "f1_initial": 0.5557404326123128,
+        "f1_round0_nodes": 0.5557404326123128
+      },
+      "rounds": [
+        {
+          "round": 1,
+          "f1_query": 0.0,
+          "recall_query": 0.0,
+          "f1_round0_nodes": 0.5557404326123128,
+          "embed_loss": {
+            "recon": 3.4969396591186523,
+            "disen": 0.03454035520553589,
+            "temp": 0.38859471678733826,
+            "final": 1.3066915273666382
+          }
+        },
+        {
+          "round": 2,
+          "f1_query": 0.0,
+          "recall_query": 0.0,
+          "f1_round0_nodes": 0.5497757847533631,
+          "embed_loss": {
+            "recon": 2.4502787590026855,
+            "disen": 0.023618459701538086,
+            "temp": 0.3258786201477051,
+            "final": 0.933258593082428
+          }
+        },
+        {
+          "round": 3,
+          "f1_query": 0.0,
+          "recall_query": 0.0,
+          "f1_round0_nodes": 0.544373284537969,
+          "embed_loss": {
+            "recon": 1.8134514093399048,
+            "disen": 0.018403291702270508,
+            "temp": 0.28898847103118896,
+            "final": 0.7069477438926697
+          }
+        }
+      ],
+      "embed_summary": {
+        "available": true,
+        "mode": "offline",
+        "embed_dim": 384,
+        "h_feats": 64,
+        "num_layers": 2,
+        "round_window": 7,
+        "alpha": 1.0,
+        "beta": 1.0,
+        "temporal_agg": "weight",
+        "refit_count": 4,
+        "last_loss": {
+          "recon": 1.8134514093399048,
+          "disen": 0.018403291702270508,
+          "temp": 0.28898847103118896,
+          "final": 0.7069477438926697
+        }
+      }
+    }
+  ],
+  "mode_flag": "offline",
+  "pretrain_epochs": 10
+}

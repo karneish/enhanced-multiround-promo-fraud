@@ -1,0 +1,10 @@
+{
+  "RT-f1_0_start": 0.5631610173767375,
+  "RT-f1_0_end": 0.5560957150994208,
+  "RT-f1_0_gap": -0.007065302277316721,
+  "RT-avg_f1_t>0": 0.28239367727307946,
+  "RT-recall_0": 0.1796875,
+  "n_rounds": 3,
+  "mode_flag": "incremental"
+}
+wrote reports/ours_incremental_3t.json

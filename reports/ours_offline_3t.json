@@ -1,0 +1,200 @@
+{
+  "RT-f1_0_start": 0.5532714964443085,
+  "RT-f1_0_end": 0.5433115909407441,
+  "RT-f1_0_gap": -0.009959905503564404,
+  "RT-avg_f1_t>0": 0.15631267237021332,
+  "RT-recall_0": 0.0,
+  "n_rounds": 3,
+  "per_trial": [
+    {
+      "round0": {
+        "round": 0,
+        "f1_initial": 0.5619285120532004,
+        "f1_round0_nodes": 0.5619285120532004
+      },
+      "rounds": [
+        {
+          "round": 1,
+          "f1_query": 0.1896551724137931,
+          "recall_query": 0.171875,
+          "f1_round0_nodes": 0.5619285120532004,
+          "embed_loss": {
+            "recon": 0.0,
+            "disen": 1.0010088698728175,
+            "temp": 0.7407749416431811,
+            "final": 0.5805946038386662
+          }
+        },
+        {
+          "round": 2,
+          "f1_query": 0.2967032967032967,
+          "recall_query": 0.2109375,
+          "f1_round0_nodes": 0.5429740791268758,
+          "embed_loss": {
+            "recon": 0.0,
+            "disen": 1.0007234492633845,
+            "temp": 0.7058435036977376,
+            "final": 0.5688556509870407
+          }
+        },
+        {
+          "round": 3,
+          "f1_query": 0.16216216216216214,
+          "recall_query": 0.09375,
+          "f1_round0_nodes": 0.5335169880624426,
+          "embed_loss": {
+            "recon": 0.0,
+            "disen": 0.9969774176075066,
+            "temp": 0.6969382510708668,
+            "final": 0.5646385562261245
+          }
+        }
+      ],
+      "embed_summary": {
+        "available": true,
+        "mode": "offline",
+        "embed_dim": 384,
+        "h_feats": 64,
+        "num_layers": 2,
+        "round_window": 7,
+        "alpha": 1.0,
+        "beta": 1.0,
+        "temporal_agg": "weight",
+        "refit_count": 4,
+        "last_loss": {
+          "recon": 0.0,
+          "disen": 0.9969774176075066,
+          "temp": 0.6969382510708668,
+          "final": 0.5646385562261245
+        }
+      }
+    },
+    {
+      "round0": {
+        "round": 0,
+        "f1_initial": 0.5547263681592041,
+        "f1_round0_nodes": 0.5547263681592041
+      },
+      "rounds": [
+        {
+          "round": 1,
+          "f1_query": 0.31355932203389836,
+          "recall_query": 0.2890625,
+          "f1_round0_nodes": 0.5547263681592041,
+          "embed_loss": {
+            "recon": 0.0,
+            "disen": 0.9881830783500717,
+            "temp": 0.7420075767778148,
+            "final": 0.5767302183759622
+          }
+        },
+        {
+          "round": 2,
+          "f1_query": 0.0,
+          "recall_query": 0.0,
+          "f1_round0_nodes": 0.5409610983981694,
+          "embed_loss": {
+            "recon": 0.0,
+            "disen": 1.0001616292125952,
+            "temp": 0.714157070806734,
+            "final": 0.5714395666731097
+          }
+        },
+        {
+          "round": 3,
+          "f1_query": 0.08759124087591241,
+          "recall_query": 0.046875,
+          "f1_round0_nodes": 0.5377920293174531,
+          "embed_loss": {
+            "recon": 0.0,
+            "disen": 1.0142349405526427,
+            "temp": 0.7072997460458422,
+            "final": 0.5738448955328282
+          }
+        }
+      ],
+      "embed_summary": {
+        "available": true,
+        "mode": "offline",
+        "embed_dim": 384,
+        "h_feats": 64,
+        "num_layers": 2,
+        "round_window": 7,
+        "alpha": 1.0,
+        "beta": 1.0,
+        "temporal_agg": "weight",
+        "refit_count": 4,
+        "last_loss": {
+          "recon": 0.0,
+          "disen": 1.0142349405526427,
+          "temp": 0.7072997460458422,
+          "final": 0.5738448955328282
+        }
+      }
+    },
+    {
+      "round0": {
+        "round": 0,
+        "f1_initial": 0.5431596091205211,
+        "f1_round0_nodes": 0.5431596091205211
+      },
+      "rounds": [
+        {
+          "round": 1,
+          "f1_query": 0.35714285714285715,
+          "recall_query": 0.390625,
+          "f1_round0_nodes": 0.5431596091205211,
+          "embed_loss": {
+            "recon": 0.0,
+            "disen": 0.9480314591803274,
+            "temp": 0.7455985224929342,
+            "final": 0.5645433272244206
+          }
+        },
+        {
+          "round": 2,
+          "f1_query": 0.0,
+          "recall_query": 0.0,
+          "f1_round0_nodes": 0.538841490794791,
+          "embed_loss": {
+            "recon": 0.0,
+            "disen": 0.9602709815025017,
+            "temp": 0.7189549444061246,
+            "final": 0.5597419753028755
+          }
+        },
+        {
+          "round": 3,
+          "f1_query": 0.0,
+          "recall_query": 0.0,
+          "f1_round0_nodes": 0.5287460389316432,
+          "embed_loss": {
+            "recon": 0.0,
+            "disen": 0.963524630337461,
+            "temp": 0.7112061380991866,
+            "final": 0.5582435894788825
+          }
+        }
+      ],
+      "embed_summary": {
+        "available": true,
+        "mode": "offline",
+        "embed_dim": 384,
+        "h_feats": 64,
+        "num_layers": 2,
+        "round_window": 7,
+        "alpha": 1.0,
+        "beta": 1.0,
+        "temporal_agg": "weight",
+        "refit_count": 4,
+        "last_loss": {
+          "recon": 0.0,
+          "disen": 0.963524630337461,
+          "temp": 0.7112061380991866,
+          "final": 0.5582435894788825
+        }
+      }
+    }
+  ],
+  "mode_flag": "offline"
+}

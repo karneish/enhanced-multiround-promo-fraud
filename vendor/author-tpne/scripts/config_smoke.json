@@ -1,0 +1,26 @@
+{
+    "TRIAL_NUM": 1,
+    "FAILURE_LIMIT": 2,
+    "EXPERIMENT_DESC": "CPU smoke test - validate pipeline end to end",
+    "LIST_DSET": ["tolokers_bid"],
+    "LIST_TRAIN_DSET": ["NONE"],
+    "EXP_DICT": {
+        "exp_type": ["ADVER"],
+        "round_num": [2],
+        "model_name": ["XGB-SP"],
+        "round_reset_model": [false],
+        "embed_type": ["temporal"],
+        "h_feats": [32],
+        "num_layers": [2],
+        "round_window": [3],
+        "num_epoch": [30],
+        "num_round_epoch": [20],
+        "early_stopping": [15],
+        "loss_type": ["ndist"],
+        "norm_name": ["layer"],
+        "temporal_agg": ["mean_final"],
+        "alpha": [1],
+        "beta": [1],
+        "augment_name": ["REAGE"]
+    }
+}

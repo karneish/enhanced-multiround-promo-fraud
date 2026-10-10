@@ -1,0 +1,8 @@
+flask
+flask_cors
+numpy
+pandas
+scikit-learn
+xgboost
+requests
+websocket-client

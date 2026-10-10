@@ -1,0 +1,10 @@
+{
+  "RT-f1_0_start": 0.5532714964443085,
+  "RT-f1_0_end": 0.5433115909407441,
+  "RT-f1_0_gap": -0.009959905503564404,
+  "RT-avg_f1_t>0": 0.15631267237021332,
+  "RT-recall_0": 0.0,
+  "n_rounds": 3,
+  "mode_flag": "offline"
+}
+wrote reports/ours_offline_3t.json

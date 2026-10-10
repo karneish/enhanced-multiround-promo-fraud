@@ -1,0 +1,74 @@
+{
+  "RT-f1_0_start": 0.5578288100208767,
+  "RT-f1_0_end": 0.5472523808693055,
+  "RT-f1_0_gap": -0.010576429151571198,
+  "RT-avg_f1_t>0": 0.18182733538183773,
+  "RT-recall_0": 0.046875,
+  "n_rounds": 3,
+  "per_trial": [
+    {
+      "round0": {
+        "round": 0,
+        "f1_initial": 0.5578288100208767,
+        "f1_round0_nodes": 0.5578288100208767
+      },
+      "rounds": [
+        {
+          "round": 1,
+          "f1_query": 0.21800947867298578,
+          "recall_query": 0.1796875,
+          "f1_round0_nodes": 0.5578288100208767,
+          "embed_loss": {
+            "recon": 0.0,
+            "disen": 1.0391395887182584,
+            "temp": 0.7550656956766982,
+            "final": 0.5980684281316523
+          }
+        },
+        {
+          "round": 2,
+          "f1_query": 0.2417582417582417,
+          "recall_query": 0.171875,
+          "f1_round0_nodes": 0.5501379944802207,
+          "embed_loss": {
+            "recon": 0.0,
+            "disen": 1.013731914909697,
+            "temp": 0.7252594694754796,
+            "final": 0.5796637947950588
+          }
+        },
+        {
+          "round": 3,
+          "f1_query": 0.08571428571428572,
+          "recall_query": 0.046875,
+          "f1_round0_nodes": 0.5366759517177344,
+          "embed_loss": {
+            "recon": 0.0,
+            "disen": 1.0083256176861508,
+            "temp": 0.71671665756789,
+            "final": 0.575014091751347
+          }
+        }
+      ],
+      "embed_summary": {
+        "available": true,
+        "mode": "offline",
+        "embed_dim": 384,
+        "h_feats": 64,
+        "num_layers": 2,
+        "round_window": 7,
+        "alpha": 1.0,
+        "beta": 1.0,
+        "temporal_agg": "weight",
+        "refit_count": 4,
+        "last_loss": {
+          "recon": 0.0,
+          "disen": 1.0083256176861508,
+          "temp": 0.71671665756789,
+          "final": 0.575014091751347
+        }
+      }
+    }
+  ],
+  "mode_flag": "offline"
+}

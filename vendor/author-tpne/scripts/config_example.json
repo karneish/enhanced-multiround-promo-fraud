@@ -1,0 +1,29 @@
+{
+    "TRIAL_NUM": 5,
+    "FAILURE_LIMIT": 10,
+
+    "EXPERIMENT_DESC": "Example experiment with config file",
+    "LIST_DSET": ["tolokers_bid", "amazon"],
+    "LIST_TRAIN_DSET": ["NONE", "NONE"],
+    "EXP_DICT": {
+        "exp_type": ["ADVER"],
+        "round_num": [3],
+
+        "model_name": ["XGB-SP"],
+        "round_reset_model": [false],
+        "embed_type": ["temporal"],
+        
+        "h_feats": [64],
+        "num_layers": [2],
+        "round_window": [7],
+
+        "loss_type": ["ndist"],
+        "norm_name": ["layer"],
+        "temporal_agg": ["weight"],
+
+        "alpha":[0, 1],
+        "beta": [0, 1],
+
+        "augment_name": ["REAGE"]
+    }
+}

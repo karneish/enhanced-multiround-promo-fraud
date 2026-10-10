@@ -1,0 +1,62 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Environments
+.venv/
+venv/
+env/
+ENV/
+.env
+
+# Local config overrides
+config.local.json
+
+# Distribution / packaging
+build/
+dist/
+*.egg-info/
+*.egg
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+wheels/
+
+# Node
+node_modules/
+
+# Jupyter
+.ipynb_checkpoints
+
+# Cache / coverage
+.pytest_cache/
+.mypy_cache/
+.pyre/
+.coverage
+htmlcov/
+
+# Real datasets (large, license-gated) - NEVER commit
+data/*.csv
+data/*.zip
+data/*.gz
+data/*.parquet
+data/*.bin
+
+# Runtime / model artifacts
+result/
+results/
+checkpoint/*
+
+# TypeScript build cache
+*.tsbuildinfo
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# TPNE environment (rebuilt from requirements-tpne.lock; never commit)
+.venv-tpne/
+.venv-tpne/**
