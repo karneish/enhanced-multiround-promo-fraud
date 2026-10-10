@@ -409,3 +409,46 @@ be right. An untrained encoder producing a near-perfect round-0 score and a
 near-worthless query score is more consistent with a degenerate representation
 than with a genuine improvement, and it has not been diagnosed. The
 raw-feature result is unaffected and is what is reported.
+
+### 4.2g The 94.39 round-0 figure is unexplained, and is NOT claimed
+
+`--features embed` reported a round-0 F1 of ~94 on the masks split, which is
+implausible: published F-measures on this dataset sit well below that. It was
+investigated and **could not be reproduced outside the exact pipeline
+invocation**, so it is reported as an open defect rather than a result.
+
+What was established:
+
+| Step | Pipeline | Isolated replication |
+|---|---|---|
+| masks split sizes / overlap | 3,527 / 2,352 / 5,879, overlap 0 | identical |
+| label vector from events vs graph | identical (0 mismatches) | identical |
+| embedding shape / aggregate stats | 11758x384, colstd 0.024 | 11758x384, colstd 0.021 |
+| test F1 | **0.94** | **0.52 - 0.55** |
+
+Repeated attempts all returned the low figure:
+- 4 explicit `torch.manual_seed` values: 0.5243, 0.5316, 0.5338, 0.5367
+- 3 sequential embedders in one process (no manual seed): 0.5321, 0.5193, 0.5440
+- the pipeline's own `Head` class with the pipeline's own `base` config: 0.5266 @0.5, 0.5475 tuned, val 0.5630
+
+The pipeline itself reproduces the high figure reliably across processes
+(0.9418, 0.9459, 0.9444, 0.9431, 0.9388), so it is not a one-off lucky draw.
+
+Signal check on the embedding, which is what makes 0.94 implausible:
+
+| Quantity | Value |
+|---|---|
+| max abs correlation between any embedding column and the label | 0.3117 |
+| the same for the raw node features | 0.2376 |
+| single-direction AUC on the test split | 0.7109 |
+
+An untrained embedding with per-column correlation ≤0.31 and a 0.71 AUC
+cannot produce 0.94 F1 through a tree model. The discrepancy was **not
+root-caused**; something in the `upgraded_tpne.py` execution path differs from
+the isolated replications in a way that was not found.
+
+**Consequently the only claimed result remains the raw-feature one**, which is
+reproducible and stable across trials: RT-f1_0 68.38, RT-avg_f1 70.57,
+RT-recall 81.77. The ~94 figure is not used, cited, or relied on anywhere, and
+`--features embed` should be treated as unvalidated until this is resolved.
+
