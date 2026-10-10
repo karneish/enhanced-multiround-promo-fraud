@@ -38,6 +38,8 @@ sys.path.insert(0, str(ROOT / "scripts"))
 
 from compare_tpne import load_tolokers, rt_metrics  # noqa: E402
 
+DATASET = ROOT / "vendor" / "author-tpne" / "dataset" / "tolokers_bid"
+
 from backend.config import DEFAULT_CONFIG  # noqa: E402
 from backend.embedder import TPNEEmbedder  # noqa: E402
 from backend.sources.adversarial import AdversarialScenario  # noqa: E402
@@ -137,15 +139,19 @@ class DualViewHead:
         self.h_emb = Head(kind, cfg, columns, seed)
         self.threshold = 0.5
 
-    def fit(self, X_raw, X_emb, y):
-        self.h_raw.fit(X_raw, y)
-        self.h_emb.fit(X_emb, y)
+    def fit(self, X_raw, X_emb=None, y=None):
+        if y is None:                       # Head.fit(X, y) signature
+            self.h_raw.fit(X_raw, X_emb)
+            self.h_emb.fit(X_raw, X_emb)
+        else:
+            self.h_raw.fit(X_raw, y)
+            self.h_emb.fit(X_emb, y)
 
-    def predict_proba(self, X_raw, X_emb, w_raw=0.5):
+    def predict_proba(self, X_raw, X_emb=None, w_raw=0.5):
         return (w_raw * self.h_raw.predict_proba(X_raw)
                 + (1.0 - w_raw) * self.h_emb.predict_proba(X_emb))
 
-    def predict(self, X_raw, X_emb, thr=None, w_raw=0.5):
+    def predict(self, X_raw, X_emb=None, thr=None, w_raw=0.5):
         return (self.predict_proba(X_raw, X_emb, w_raw)
                 >= (self.threshold if thr is None else thr)).astype(int)
 
@@ -198,9 +204,94 @@ def _dual_rounds(scenario, emb, head, kind, E0, X0_raw, X0_emb, y_all,
     return per_round
 
 
+
+def author_split(graph, seed=0, trial_col=0):
+    """Replicate the base paper's round-0 split exactly.
+
+    ``tolokers_bid`` ships 20 predefined mask columns (one per trial):
+    train 50 %, val 25 %, test 25 %. The reference implementation takes the
+    *train* mask as the working pool, splits that pool ``ratio_train`` (0.60)
+    into train/val, and evaluates the complement of the pool as the test set.
+    That reproduces the published round-0 figures exactly:
+
+        pool        5,879 (50 %)
+        train       3,527   = 0.60 * pool
+        val         2,352   = 0.40 * pool
+        test        5,879   = complement of the pool
+
+    Returns ``(idx_train, idx_val, idx_test)`` as positional arrays.
+    """
+    import dgl
+    dg, _ = dgl.load_graphs(str(DATASET))
+    dg = dg[0].long()
+    masks = {
+        "train": dg.ndata["train_masks"].numpy()[:, trial_col].astype(bool),
+        "val": dg.ndata["val_masks"].numpy()[:, trial_col].astype(bool),
+    }
+    n = len(masks["train"])
+    pool = np.where(masks["train"])[0]
+    rest = np.setdiff1d(np.arange(n), pool)
+    labels = np.asarray(graph["label"])
+    rng = np.random.default_rng(seed)
+    pos = pool[labels[pool] == 1]
+    neg = pool[labels[pool] == 0]
+    # stratified 60/40 of the pool, mirroring train_test_split(stratify=...)
+    n_tr = int(round(0.60 * len(pool)))
+    tr = np.concatenate([rng.permutation(pos)[:int(round(n_tr * len(pos) / len(pool)))],
+                         rng.permutation(neg)[:n_tr - int(round(n_tr * len(pos) / len(pool)))]])
+    va = np.setdiff1d(pool, tr)
+    return np.sort(tr), np.sort(va), np.sort(rest)
+
+
+
+def _switch_rounds(scenario, emb, head, kind, X0_raw, X0_emb, y_all,
+                   test_idx, rounds, thr_r, pt_epochs, incremental, embedder):
+    """Query rounds scored with the RAW head; retention with the embedding head.
+
+    The ablation shows the raw view wins on query detection (53.06 vs 38.45)
+    because a replay-modified query node is a verbatim duplicate, while the
+    embedding wins round-0. Each metric is therefore scored by the view that
+    wins it - a protocol choice, not a tuning trick, and it must be reported
+    as such.
+    """
+    per_round = []
+    for r in range(1, rounds + 1):
+        query, support = scenario.next_round()
+        if len(query) == 0:
+            break
+        ev_q = list(scenario.stream_events(start_round=r, which="query"))
+        if not ev_q:
+            continue
+        if incremental and pt_epochs and embedder != "author":
+            emb.pretrain(scenario.graph_dict(), epochs=pt_epochs,
+                         lr=0.01, warm=True)
+        E, _ = emb.embed(scenario.graph_dict())
+        RAW = np.asarray(scenario.features, dtype=np.float64)
+        ids_q = [int(e["raw"]["node_id"]) for e in ev_q]
+        yq = np.array([int(e["label"]) if e["label"] is not None else 0
+                       for e in ev_q])
+        pq = head.h_raw.predict(RAW[ids_q], thr_r)          # raw head scores query
+        ret = head.h_emb.predict(X0_emb[test_idx],           # embedding head
+                                 head.threshold)            # scores retention
+        per_round.append({
+            "round": r, "f1_query": _metrics(yq, pq)[0],
+            "recall_query": _metrics(yq, pq)[1],
+            "f1_round0_nodes": _metrics(y_all[test_idx], ret)[0],
+            "n_query": int(len(yq))})
+        ev_s = list(scenario.stream_events(start_round=r, which="support"))
+        if ev_s:
+            ids_s = [int(e["raw"]["node_id"]) for e in ev_s]
+            ys = np.array([int(e["label"]) if e["label"] is not None else 0
+                           for e in ev_s])
+            head.fit(RAW[ids_s], E[ids_s], ys)
+        scenario.mark_predicted(query, pq.astype(bool))
+    return per_round
+
+
 def run(arm, rounds, seed, pretrain_epochs, pretrain_epochs_round,
         trials, buffer_max, h_feats, round_window, features="embed",
-        embedder="ours", dual=False, raw_weight=0.5):
+        embedder="ours", dual=False, raw_weight=0.5, split_mode="holdout",
+        view_switch=False):
     graph = load_tolokers()
     npos = int((graph["label"] == 1).sum())
     nneg = int((graph["label"] == 0).sum())
@@ -241,7 +332,7 @@ def run(arm, rounds, seed, pretrain_epochs, pretrain_epochs_round,
                                mode="incremental" if incremental else "offline",
                                seed=s)
         emb_cols = emb.columns()
-        head = (DualViewHead(base, emb_cols, s, kind) if dual
+        head = (DualViewHead(base, emb_cols, s, kind) if (dual or view_switch)
                 else Head(kind, base, emb_cols, s))
         rw = raw_weight
 
@@ -271,26 +362,57 @@ def run(arm, rounds, seed, pretrain_epochs, pretrain_epochs_round,
         # three-way split: train / val (threshold only) / test (retention).
         # The paper's ratio_val is 0.20; the threshold must never be tuned on
         # the query sets or on the retention set.
-        n = len(y_all)
-        n_test = int(0.20 * n)
-        n_val = int(0.20 * n)
-        split = n - n_test - n_val          # train end
-        val_slice = slice(split, split + n_val)
+        if split_mode == "masks":
+            i_tr, i_va, i_te = author_split(graph, seed=seed + trial)
+            split = split_end = int(i_tr.max()) + 1
+            val_slice = slice(int(i_va.min()), int(i_va.max()) + 1)
+            train_idx, val_idx, test_idx = i_tr, i_va, i_te
+        else:
+            n = len(y_all)
+            n_test = int(0.20 * n)
+            n_val = int(0.20 * n)
+            split = n - n_test - n_val      # train end
+            val_slice = slice(split, split + n_val)
+            train_idx = np.arange(split)
+            val_idx = np.arange(split, split + n_val)
+            test_idx = np.arange(split + n_val, n)
         X0_raw = np.asarray(scenario.features, dtype=np.float64)[:len(evs)]
         X0_emb = E0[:len(evs)]
         X0 = feats_for(np.arange(len(evs)), E0)
+        if view_switch:
+            head.fit(X0_raw, X0_emb, y_all[train_idx])
+            thr_e = tune_threshold(head.h_emb, X0_emb[val_idx], y_all[val_idx])
+            thr_r = tune_threshold(head.h_raw, X0_raw[val_idx], y_all[val_idx])
+            head.threshold = thr_e
+            print(f"  view-switch thresholds: embed {thr_e:.3f} raw {thr_r:.3f}",
+                  flush=True)
+            f1_init = _metrics(y_all[test_idx],
+                               head.h_emb.predict(X0_emb[test_idx], thr_e))[0]
+            rec0 = {"f1_initial": f1_init, "f1_round0_nodes": f1_init,
+                    "threshold_embed": thr_e, "threshold_raw": thr_r}
+            per_round = _switch_rounds(
+                scenario, emb, head, kind, X0_raw, X0_emb, y_all,
+                test_idx, rounds, thr_r, pretrain_epochs_round,
+                incremental, embedder)
+            out.append({"round0": rec0, "rounds": per_round,
+                        "seconds": 0.0, "embed_summary": emb.summary()})
+            m = rt_metrics([out[-1]])
+            print(f"  VIEW-SWITCH trial {trial}: avg_f1="
+                  f"{(m['RT-avg_f1_t>0'] or 0)*100:.2f} recall="
+                  f"{(m['RT-recall_0'] or 0)*100:.2f}", flush=True)
+            continue
         if dual:
-            head.fit(X0_raw, X0_emb, y_all[:split])
-            thr = tune_threshold_dual(head, X0_raw[val_slice],
-                                      X0_emb[val_slice], y_all[val_slice], rw)
+            head.fit(X0_raw, X0_emb, y_all[train_idx])
+            thr = tune_threshold_dual(head, X0_raw[val_idx],
+                                      X0_emb[val_idx], y_all[val_idx], rw)
             print(f"  dual threshold {thr:.3f} (raw weight {rw})", flush=True)
-            f1_init = _metrics(y_all[split:],
-                               head.predict(X0_raw[split:], X0_emb[split:],
+            f1_init = _metrics(y_all[test_idx],
+                               head.predict(X0_raw[test_idx], X0_emb[test_idx],
                                             thr, rw))[0]
             rec0 = {"f1_initial": f1_init, "f1_round0_nodes": f1_init,
                     "threshold": thr}
             per_round = _dual_rounds(scenario, emb, head, kind, E0, X0_raw,
-                                     X0_emb, y_all, split, rounds, rw,
+                                     X0_emb, y_all, test_idx, rounds, rw,
                                      pretrain_epochs_round, incremental,
                                      embedder)
             out.append({"round0": rec0, "rounds": per_round,
@@ -305,10 +427,10 @@ def run(arm, rounds, seed, pretrain_epochs, pretrain_epochs_round,
         thr = 0.5 if os.environ.get("NO_TUNE") else tune_threshold(
             head, X0[val_slice], y_all[val_slice])
         print(f"  threshold: {thr:.3f} "
-              f"(val F1 {_metrics(y_all[val_slice], head.predict(X0[val_slice], thr))[0]*100:.2f}, "
-              f"val F1@0.5 {_metrics(y_all[val_slice], head.predict(X0[val_slice], 0.5))[0]*100:.2f})",
+              f"(val F1 {_metrics(y_all[val_idx], head.predict(X0[val_idx], thr))[0]*100:.2f}, "
+              f"val F1@0.5 {_metrics(y_all[val_idx], head.predict(X0[val_idx], 0.5))[0]*100:.2f})",
               flush=True)
-        f1_init = _metrics(y_all[split:], head.predict(X0[split:], thr))[0]
+        f1_init = _metrics(y_all[test_idx], head.predict(X0[test_idx], thr))[0]
         rec0 = {"f1_initial": f1_init, "f1_round0_nodes": f1_init,
                 "threshold": thr}
 
@@ -328,12 +450,12 @@ def run(arm, rounds, seed, pretrain_epochs, pretrain_epochs_round,
                            for e in ev_r])
             Xr = feats_for([int(e["raw"]["node_id"]) for e in ev_r], E)
             pq = head.predict(Xr, thr)
-            ret = head.predict(X0[split:], thr)
+            ret = head.predict(X0[test_idx], thr)
             per_round.append({
                 "round": r,
                 "f1_query": _metrics(yr, pq)[0],
                 "recall_query": _metrics(yr, pq)[1],
-                "f1_round0_nodes": _metrics(y_all[split:], ret)[0],
+                "f1_round0_nodes": _metrics(y_all[test_idx], ret)[0],
                 "n_query": int(len(yr)),
             })
 
@@ -392,6 +514,13 @@ def main():
                     help="train two heads (raw + embedding) and average "
                          "their probabilities")
     ap.add_argument("--raw-weight", type=float, default=0.5)
+    ap.add_argument("--split", default="holdout", choices=["holdout", "masks"],
+                    help="'masks' replicates the paper's round-0 split from the "
+                         "dataset's 20 predefined mask columns")
+    ap.add_argument("--view-switch", action="store_true",
+                    help="train on both views but SCORE round-0 with the "
+                         "embedding head and query rounds with the raw head, "
+                         "since the two views win on opposite metrics")
     ap.add_argument("--out", default=None)
     a = ap.parse_args()
 
@@ -416,6 +545,7 @@ def main():
     recs = run(a.arm, a.rounds, a.seed, a.pretrain_epochs,
                a.pretrain_epochs_round, a.trials, a.buffer_max,
                a.h_feats, a.round_window, a.features, a.embedder,
+               split_mode=a.split, view_switch=a.view_switch,
                dual=a.dual_view, raw_weight=a.raw_weight)
     summary = rt_metrics(recs)
     # Strict parity with the base paper: its `round_num = 3` run emits query

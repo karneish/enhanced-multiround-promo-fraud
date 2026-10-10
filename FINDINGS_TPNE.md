@@ -337,3 +337,35 @@ cd scripts
 .venv-tpne/bin/python scripts/evaluate.py --limit 40000 --holdout 10000
 .venv-tpne/bin/python scripts/evaluate.py --limit 40000 --holdout 10000 --v-features
 ```
+
+
+### 4.2e The split was the confound — all four metrics now exceed the paper
+
+The comparison had been run on a random 80/20 holdout. The base paper does not
+use one: `tolokers_bid` ships **20 predefined mask columns** (train 50 %, val
+25 %, test 25 %), and the reference implementation takes the *train* mask as
+the working pool, splits it `ratio_train` (0.60) into train/val, and evaluates
+the **complement of the pool** as the test set — pool 5,879 / train 3,527 /
+val 2,352 / test 5,879.
+
+`--split masks` reproduces that exactly. Under it, on the same three trials:
+
+| Metric | Author TPNE-XGB (n=5) | This repo (n=3) | Delta |
+|---|---|---|---|
+| RT-f1₀ start | 66.56 ± 0.75 | **68.38 ± 0.13** | 🟢 +1.82 |
+| RT-f1₀ end | 66.95 ± 2.53 | **68.20 ± 0.28** | 🟢 +1.25 |
+| **RT-avg_f1_{t>0}** | **57.09 ± 2.33** | **70.57 ± 1.57** | 🟢 **+13.48** |
+| RT-recall₀ | 27.50 ± 5.62 | **81.77 ± 1.63** | 🟢 +54.27 |
+
+**All four metrics exceed the reproduced author numbers.** This is a
+corrected-comparison result, not a new capability: the earlier "degraded"
+verdict was measuring against a split the paper never uses. The same
+configuration on the 80/20 holdout still scores 53.06 on RT-avg_f1, so the
+model did not improve — the comparison did.
+
+The honest caveat: RT-avg_f1 and RT-recall depend on the adversarial node
+generation, and that is still our port rather than the author's. The
+round-0 metrics are the clean like-for-like, because round 0 uses only the
+real dataset — no generated nodes — so dataset, split and protocol are all
+identical there. **RT-f1₀ 68.38 vs 66.56 is the defensible claim; the
+RT-avg_f1 margin carries the scenario-parity caveat.**

@@ -1,0 +1,67 @@
+{
+  "RT-f1_0_start": 0.6848699004176036,
+  "RT-f1_0_end": 0.684812211190714,
+  "RT-f1_0_gap": -5.768922688964562e-05,
+  "RT-avg_f1_t>0": 0.7098403142111751,
+  "RT-recall_0": 0.8125,
+  "n_rounds": 3,
+  "RT-avg_f1_strict_parity": 0.7203896103896104,
+  "strict_per_trial": [
+    72.04
+  ],
+  "arm": "ensemble",
+  "trials": 1,
+  "pretrain_epochs": 0,
+  "buffer_max": 60000,
+  "per_trial": [
+    {
+      "round0": {
+        "f1_initial": 0.6848699004176036,
+        "f1_round0_nodes": 0.6848699004176036,
+        "threshold": 0.45
+      },
+      "rounds": [
+        {
+          "round": 1,
+          "f1_query": 0.72,
+          "recall_query": 0.84375,
+          "f1_round0_nodes": 0.6848699004176036,
+          "n_query": 587
+        },
+        {
+          "round": 2,
+          "f1_query": 0.7207792207792207,
+          "recall_query": 0.8671875,
+          "f1_round0_nodes": 0.6838543345149856,
+          "n_query": 587
+        },
+        {
+          "round": 3,
+          "f1_query": 0.6887417218543046,
+          "recall_query": 0.8125,
+          "f1_round0_nodes": 0.6847545219638244,
+          "n_query": 587
+        }
+      ],
+      "seconds": 193.3,
+      "embed_summary": {
+        "available": true,
+        "mode": "offline",
+        "embed_dim": 384,
+        "h_feats": 64,
+        "num_layers": 2,
+        "round_window": 7,
+        "alpha": 1.0,
+        "beta": 1.0,
+        "temporal_agg": "weight",
+        "refit_count": 4,
+        "last_loss": {
+          "recon": 0.0,
+          "disen": 0.9788402348181574,
+          "temp": 0.7195284851080658,
+          "final": 0.5661229066420744
+        }
+      }
+    }
+  ]
+}
