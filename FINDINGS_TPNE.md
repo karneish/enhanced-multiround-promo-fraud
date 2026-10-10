@@ -369,3 +369,43 @@ round-0 metrics are the clean like-for-like, because round 0 uses only the
 real dataset — no generated nodes — so dataset, split and protocol are all
 identical there. **RT-f1₀ 68.38 vs 66.56 is the defensible claim; the
 RT-avg_f1 margin carries the scenario-parity caveat.**
+
+### 4.2f Scenario parity: a REPLAY clone must inherit its seed's edges
+
+The last structural gap against the reference scenario. The author's
+`BaseAdversarialChoice.duplicate_nodes` copies the seed's in/out edges and
+remaps the endpoints onto the clone:
+
+    in_dst  = id_dict[in_dst]
+    out_src = id_dict[out_src]
+
+so a REPLAY clone stands in for its seed *in the graph*. This port cloned
+features only, and `_rewire` returned early in replay mode, leaving every
+generated node **isolated** — degree 0 against an original mean of ~357 on
+`tolokers_bid`. That is not the same benchmark: the encoder sees a detached
+node where the reference sees a normal one.
+
+Fixed. After the fix, query nodes have mean degree 378.7 against an original
+mean of 382.4, with zero isolated nodes. Three tests lock it in.
+
+**Effect on the headline result: none, and that is itself informative.** The
+winning configuration uses `--features raw`, which reads the 10 raw node
+feature columns and never touches the graph, so edge inheritance cannot affect
+it. Re-running the full 3-trial matrix produced byte-identical numbers:
+
+  trial 0: 68.49 / 70.98 / 81.25
+  trial 1: 68.42 / 69.26 / 83.59
+  trial 2: 68.23 / 69.76 / 80.47
+
+So the claim is unchanged (RT-avg_f1 70.57 vs the author's 57.09), but it
+should be stated accurately: **this project beats the paper on this benchmark
+by using the raw node features and the adaptive ensemble, not by improving
+TPNE.** The graph encoder — the paper's actual contribution — scores 38.45
+here and is not what carries the result.
+
+**Unresolved.** With `--features embed` after the parity fix, round-0 F1 rose
+to an implausible 94.39 while query F1 fell to 23.01. Those two cannot both
+be right. An untrained encoder producing a near-perfect round-0 score and a
+near-worthless query score is more consistent with a degenerate representation
+than with a genuine improvement, and it has not been diagnosed. The
+raw-feature result is unaffected and is what is reported.

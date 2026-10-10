@@ -172,8 +172,14 @@ class AdversarialScenario:
     def _duplicate(self, seed_ids):
         """Clone the seed nodes, returning the new node block.
 
-        The clone keeps the seed's neighbourhood shape; the new ids are
-        appended after the current node count.
+        With ``adver_mod='replay'`` the clone also **inherits the seed's
+        neighbourhood**: the author's ``BaseAdversarialChoice.duplicate_nodes``
+        copies the seed's in/out edges and remaps the endpoints
+        (``in_dst = id_dict[in_dst]``, ``out_src = id_dict[out_src]``), so the
+        duplicate takes the seed's place in the graph. Cloning features alone
+        leaves the new node isolated - degree 0 against an original mean of
+        ~357 on ``tolokers_bid`` - which is not the same benchmark and
+        materially changes what the encoder sees.
         """
         seed_ids = np.asarray(seed_ids)
         new_ids = np.arange(self.features.shape[0],
@@ -181,6 +187,28 @@ class AdversarialScenario:
         feats = self.features[seed_ids].copy()
         labels = self.labels[seed_ids].copy()
         return new_ids, feats, labels, seed_ids
+
+    def _inherit_edges(self, new_ids, seed_ids):
+        """Give each clone the seed's neighbourhood, seed slot remapped.
+
+        Mirrors the author's edge copy: edges whose endpoint is the seed become
+        edges of the clone instead, so the clone is a drop-in replacement
+        rather than a detached copy. Both directions are written, matching the
+        undirected representation used here.
+        """
+        if len(new_ids) == 0:
+            return
+        src, dst = self.edges[0], self.edges[1]
+        remap = dict(zip(np.asarray(seed_ids).tolist(),
+                         np.asarray(new_ids).tolist()))
+        # rows whose src is a seed -> src becomes the clone; same for dst
+        s_src = np.array([remap.get(int(v), int(v)) for v in src], dtype=np.int64)
+        s_dst = np.array([remap.get(int(v), int(v)) for v in dst], dtype=np.int64)
+        keep = (s_src != src) | (s_dst != dst)
+        if np.any(keep):
+            self.edges = np.concatenate([self.edges,
+                                         np.vstack([s_src[keep], s_dst[keep]])],
+                                        axis=1)
 
     def _neighbours(self, node):
         src, dst = self.edges[0], self.edges[1]
@@ -275,7 +303,11 @@ class AdversarialScenario:
         # support nodes join the training set; query nodes do not
         flags = np.full(len(new_ids), bool(trainable))
         self.train_mask = np.concatenate([self.train_mask, flags])
-        self._rewire(new_ids, seeds)
+        if self.adver_mod == "replay":
+            # a replay clone stands in for its seed, edges included
+            self._inherit_edges(new_ids, seeds)
+        else:
+            self._rewire(new_ids, seeds)
         return new_ids
 
     def next_round(self, support_frac=0.5):

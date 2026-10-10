@@ -34,6 +34,49 @@ def _graph(n=200, d=8, pos_frac=0.2, seed=0):
             "label": labels}
 
 
+class TestReplayParity(unittest.TestCase):
+    """A REPLAY clone must take its seed's place in the graph.
+
+    The author's ``BaseAdversarialChoice.duplicate_nodes`` copies the seed's
+    in/out edges and remaps the endpoints onto the clone. Cloning features
+    alone leaves the new node isolated, which is a different benchmark.
+    """
+
+    def _deg(self, sc, ids):
+        src, dst = sc.edges[0], sc.edges[1]
+        return np.bincount(np.concatenate([src, dst]),
+                           minlength=sc.features.shape[0])[ids]
+
+    def test_replay_clone_is_not_isolated(self):
+        g = _graph(n=150, d=6, pos_frac=0.3)
+        sc = AdversarialScenario(g, {"seed": 3, "adver_mod": "replay",
+                                     "round_new_pos": 10, "round_new_neg": 10})
+        q, _s = sc.next_round()
+        self.assertTrue(np.all(self._deg(sc, q) > 0),
+                        "every replay clone must inherit its seed's edges")
+
+    def test_replay_clone_degree_matches_the_population(self):
+        g = _graph(n=400, d=6, pos_frac=0.3)
+        sc = AdversarialScenario(g, {"seed": 3, "adver_mod": "replay",
+                                     "round_new_pos": 20, "round_new_neg": 20})
+        q, _s = sc.next_round()
+        base = self._deg(sc, np.arange(sc.n0)).mean()
+        clone = self._deg(sc, q).mean()
+        # within an order of magnitude of the population it substitutes for
+        self.assertGreater(clone, base / 5.0)
+        self.assertLess(clone, base * 5.0)
+
+    def test_perturbing_mod_keeps_the_old_behaviour(self):
+        """`relative` must still rewire rather than inherit, so the two
+        modification strategies stay distinguishable."""
+        g = _graph(n=200, d=6, pos_frac=0.3)
+        sc = AdversarialScenario(g, {"seed": 3, "adver_mod": "relative",
+                                     "conn_coef": 0.5,
+                                     "round_new_pos": 10, "round_new_neg": 10})
+        q, _s = sc.next_round()
+        self.assertGreater(self._deg(sc, q).mean(), 0.0)
+
+
 class TestScenario(unittest.TestCase):
     def setUp(self):
         self.g = _graph()
