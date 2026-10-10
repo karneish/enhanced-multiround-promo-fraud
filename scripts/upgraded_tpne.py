@@ -113,7 +113,8 @@ def tune_threshold(head, X, y, grid=None):
 
 
 def run(arm, rounds, seed, pretrain_epochs, pretrain_epochs_round,
-        trials, buffer_max, h_feats, round_window, features="embed"):
+        trials, buffer_max, h_feats, round_window, features="embed",
+        embedder="ours"):
     graph = load_tolokers()
     npos = int((graph["label"] == 1).sum())
     nneg = int((graph["label"] == 0).sum())
@@ -144,15 +145,21 @@ def run(arm, rounds, seed, pretrain_epochs, pretrain_epochs_round,
     for trial in range(trials):
         s = seed + trial
         scenario = AdversarialScenario(graph, {**scenario_cfg, "seed": s})
-        emb = TPNEEmbedder(h_feats=h_feats, num_layers=2,
-                           round_window=round_window,
-                           mode="incremental" if incremental else "offline",
-                           seed=s)
+        if embedder == "author":
+            from backend.embedder import AuthorTemporalEmbedder
+            emb = AuthorTemporalEmbedder(h_feats=h_feats, num_layers=2,
+                                         round_window=round_window)
+        else:
+            emb = TPNEEmbedder(h_feats=h_feats, num_layers=2,
+                               round_window=round_window,
+                               mode="incremental" if incremental else "offline",
+                               seed=s)
         emb_cols = emb.columns()
         head = Head(kind, base, emb_cols, s)
 
         t0 = time.time()
-        emb.pretrain(scenario.graph_dict(), epochs=pretrain_epochs, lr=0.01)
+        if pretrain_epochs and embedder != "author":
+            emb.pretrain(scenario.graph_dict(), epochs=pretrain_epochs, lr=0.01)
         E0, _ = emb.embed(scenario.graph_dict())
 
         # round 0: the real labelled graph, split into support / holdout
@@ -202,7 +209,7 @@ def run(arm, rounds, seed, pretrain_epochs, pretrain_epochs_round,
             ev_r = list(scenario.stream_events(start_round=r, which="query"))
             if not ev_r:
                 continue
-            if incremental and pretrain_epochs_round:
+            if incremental and pretrain_epochs_round and embedder != "author":
                 emb.pretrain(scenario.graph_dict(),
                              epochs=pretrain_epochs_round, lr=0.01, warm=True)
             E, _ = emb.embed(scenario.graph_dict())
@@ -266,6 +273,10 @@ def main():
     ap.add_argument("--class-weight", default="balanced",
                     help="'balanced' | 'none' | numeric weight for the "
                          "ensemble members (trades recall for precision)")
+    ap.add_argument("--embedder", default="ours",
+                    choices=["ours", "author"],
+                    help="'ours' = the from-scratch TPNE port; 'author' = the "
+                         "reference TemporalEmbedder vendored in vendor/")
     ap.add_argument("--out", default=None)
     a = ap.parse_args()
 
@@ -289,7 +300,7 @@ def main():
         os.environ["NO_TUNE"] = "1"
     recs = run(a.arm, a.rounds, a.seed, a.pretrain_epochs,
                a.pretrain_epochs_round, a.trials, a.buffer_max,
-               a.h_feats, a.round_window, a.features)
+               a.h_feats, a.round_window, a.features, a.embedder)
     summary = rt_metrics(recs)
     # Strict parity with the base paper: its `round_num = 3` run emits query
     # rows for rounds 1 and 2 only, so RT-avg_f1_t>0 is a mean over exactly

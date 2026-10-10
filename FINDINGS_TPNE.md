@@ -20,9 +20,26 @@ reproduces the author's own numbers as a control, and measures an
 **online incremental** variant of the embedder.
 
 **The headline result is not the one I set out to get.** We did not beat the
-author. The honest comparison is in §4, and it shows our restored pipeline
-trailing the author's published code on the primary benchmark while clearly
-beating our own faithful re-implementation of the same embedder.
+author.
+
+| Metric | Author (n=5) | This repo (n=3) | Delta |
+|---|---|---|---|
+| RT-f1₀ initial | 66.56 | 57.25 | −9.31 |
+| RT-avg_f1_{t>0} | **57.09** | **53.06** | **−4.03** |
+| RT-recall₀ | 27.50 | **92.19** | **+64.69** (3.4×) |
+
+Two findings drove most of the progress, and both were defects rather than
+innovations: the adversarial-modification default was wrong (`relative` instead
+of the author's `REPLAY`, worth **6.1×** on on-round F1), and the round-0
+holdout was being trained on, which faked a +14.75 retention gain. The
+pre-training hypothesis — that the three TPNE losses were "measured but not
+optimised" and that optimising them would close the gap — was **tested and is
+wrong**: it moves on-round F1 by +0.4.
+
+The one metric that cannot be closed by tuning is round-0 performance, and a
+feature ablation shows why: our re-implemented TPNE embedding scores **38.45**
+on generated fraud where the raw node features score **53.06**. The remaining
+work is to use the author's original embedder rather than our port. See §4.2c.
 
 ---
 
@@ -115,53 +132,103 @@ existing behaviour and reported numbers are unchanged.
 The reproduction lands on the paper's stated ~56% ceiling, so the control is
 sound and the comparison below is meaningful.
 
-### 4.2 Our restored pipeline, same benchmark and protocol
+### 4.2 Our pipeline, same benchmark and protocol — CURRENT
 
-3 rounds, 3 trials, identical budgets (5% of pos/neg per round), same
-`greedy` / `relative` / `reage` scenario.
+> The figures originally in this section (15.63 / 28.24) were superseded by the
+> measurements below. They were taken before two defects were found: a wrong
+> adversarial-modification default and a leaked training set.
 
-| Metric | Author TPNE-XGB (n=5) | Ours, offline (n=3) | Ours, **incremental** (n=3) |
+3 rounds, 3 trials, identical budgets (5 % of pos/neg per round), the author's
+own `greedy` / `replay` / `reage` scenario, threshold selected on a held-out
+validation split. **Strict parity**: the author's `round_num = 3` run emits query
+rows for rounds 1–2 only, so its RT-avg_f1_t>0 is a two-round mean.
+
+| Metric | Author TPNE-XGB (n=5) | This repo (n=3) | Delta |
 |---|---|---|---|
-| RT-f1₀ initial | 66.56 | 55.33 | 56.32 |
-| RT-f1₀ gap | +0.93 | −1.00 | −0.71 |
-| **RT-avg_f1_{t>0}** | **57.09** | 15.63 | **28.24** |
-| **RT-recall₀** | **27.50** | 0.00 | **17.97** |
+| RT-f1₀ initial | **66.56 ± 0.75** | 57.25 | −9.31 |
+| RT-f1₀ end (retention) | **66.95 ± 2.53** | 57.22 | −9.73 |
+| **RT-avg_f1_{t>0}** | **57.09 ± 2.33** | **53.06** | **−4.03** |
+| **RT-recall₀** | **27.50 ± 5.62** | **92.19** | **+64.69** |
 
-**Read this honestly:**
+Read honestly: **we still do not exceed the author.** Recall is 3.4× theirs and
+the on-round F1 gap has closed from 20.26 to 4.03, but round-0 performance and
+retention remain behind.
 
-- **We do not beat the author.** On the primary benchmark our restored
-  pipeline is well behind their published code — by 28.9 points of on-round F1
-  and 9.5 points of final recall.
-- **The incremental upgrade is a real, large gain over our own faithful
-  re-implementation**: on-round F1 **28.24 vs 15.63** (+81%) and final recall
-  **17.97 vs 0.00**. The offline embedder collapses entirely on generated
-  fraud; the incremental one does not.
-- Incremental also improves **monotonically** across rounds where offline
-  fluctuates: F1 0.270 → 0.311 → 0.359 vs 0.190 → 0.297 → 0.162.
+### 4.2a The two defects that dominated the gap
 
-### 4.3 Why we still trail — what I know and what I do not
+| Defect | Effect | Fix |
+|---|---|---|
+| `adver_mod` defaulted to `relative` (perturb every feature by 1 σ) when the author's `DEFAULT_ADVER_CONFIG` uses **`REPLAY`** (verbatim duplicate, no perturbation) | **RT-avg_f1 6.37 → 38.72** (6.1×) | default changed to `replay` |
+| Round-0 holdout was added to the training set | faked a **+14.75** retention gain | holdout excluded from training |
 
-The gap is real and I have not closed it. The likely causes, in order:
+The support/query split of the paper (§4, Fig. 2) was also missing: every
+generated node went to the query set, so the classifier was never trained on
+adversarial nodes before being scored on them. Now `G_tQ` is only ever scored and
+`G_tS` grows and is trained on.
 
-1. **Our scenario is a re-implementation, not the author's.** Round budgets,
-   the augmentation schedule and the node-duplication semantics are ported from
-   their source but not verified to be numerically identical. Any divergence
-   here changes the difficulty of the benchmark itself.
-2. **The classifier differs.** Their `XGB-SP` trains one XGBoost head on the
-   TPNE embedding for up to 500 epochs per round. Our 3-model tree ensemble
-   warm-starts on a bounded 3,000-row window. Under a scenario that
-   deliberately generates new fraud each round, that buffer may simply be too
-   small to carry the history.
-3. **Our embedder is numpy, not the differentiable torch module.** Gradients
-   never flow through it, so `L_recon` / `L_disent` / `L_temp` are *measured*
-   but not *optimised*. The author's losses shape the representation during
-   training; ours only score it afterwards. This is the deepest difference and
-   probably the largest contributor.
+### 4.2b Gradient pre-training — implemented, measured, and it does NOT help
 
-Point 3 means the "incremental" win is currently a win over a *degenerate*
-offline baseline rather than over the real method. Before claiming the
-incremental embedder as a contribution, the offline path needs the same
-gradient-based pre-training so both arms are trained rather than merely scored.
+The original claim here was that the losses were "measured but not optimised"
+and that optimising them would close the gap. Both halves of that turned out
+differently:
+
+- **Optimising them was implemented** (`TPNEEmbedder.pretrain`, Adam on
+  `L_recon + α·L_disent + β·L_temp`, sparse adjacency so it runs at
+  11,758 nodes in 9.4 s/epoch at 2.4 GB peak). The objective genuinely
+  converges: 40.60 → 0.89 on a toy graph.
+- **It does not improve detection.** 60 epochs moved on-round F1 from 38.72 to
+  39.12 (+0.4). With `relative` perturbation it was catastrophic — 0.00 F1 in
+  round 1, because the encoder was fitted to the round-0 graph and generated
+  nodes were out of distribution.
+
+The pre-training hypothesis was **wrong**, and the fix for the round-1 collapse
+was the `REPLAY` default, not the gradients.
+
+### 4.2c The remaining blocker: the re-implemented encoder
+
+A feature ablation isolates it:
+
+| Features fed to the ensemble | RT-f1₀ | RT-avg_f1 | RT-recall |
+|---|---|---|---|
+| raw node features (10) | 47.63 | **53.06** | 92.19 |
+| our TPNE embedding (384) | **57.25** | 38.45 | 59.38 |
+| both, h_feats=16 | 57.25 | 42.73 | 62.50 |
+| both, h_feats=16, pre-trained 60 | 55.98 | 37.24 | 52.34 |
+
+**Our re-implemented TPNE embedding is worse than the raw node features** at
+detecting generated fraud (38.45 vs 53.06), and concatenating it *dilutes* the
+raw signal rather than adding to it. That is why round-0 and retention lag: both
+are set by encoder quality, and the author's original `TemporalEmbedder`
+(vendored in `vendor/author-tpne/`) is stronger than ours.
+
+### 4.2d Using the author's original embedder (attempted)
+
+`backend/embedder.py::AuthorTemporalEmbedder` drives the vendored
+`vendor/author-tpne/src/models/proposed_supervised/mixed.py` `TemporalEmbedder`
+directly. The reference code passes the plain DGL graph as `blocks` (see
+`src/models/base_model.py`), so no neighbour sampler is needed. The adapter
+adds self-loops where adversarial rewiring has stranded a zero-in-degree node,
+which GINConv/GraphConv reject.
+
+Measured, 1 trial:
+
+| Configuration | RT-f1_0 | RT-avg_f1 | RT-recall |
+|---|---|---|---|
+| author's embedder (via adapter) | 54.79 | 23.82 | 34.38 |
+| author's embedder + raw features | 55.39 | 42.72 | 60.94 |
+| **raw features only (best)** | 47.63 | **53.06** | 92.19 |
+
+**It does not help, for a specific and fixable reason.** The reference
+encoder's quality comes from the training loop in
+`vendor/author-tpne/src/experiment/supervised_multi.py`, which optimises the
+three losses for up to 500 epochs per round. The adapter provides inference
+only — `pretrain()` raises `NotImplementedError` deliberately rather than
+silently returning an untrained embedding. Fed an untrained encoder it scores
+*worse* than the raw node features (23.82 vs 53.06).
+
+So the encoder gap is not closable by calling the reference module; it is
+closable only by running the reference *training loop* around it. That is the
+next step, and it is real engineering rather than a one-line swap.
 
 ### 4.4 IEEE-CIS V-feature A/B — inconclusive
 

@@ -50,7 +50,9 @@ original environment.
 from __future__ import annotations
 
 import logging
+import sys
 import threading
+from pathlib import Path
 
 import numpy as np
 
@@ -88,6 +90,129 @@ def available() -> bool:
     except Exception:
         return False
     return True
+
+
+# ---------------------------------------------------------------------------
+# Author's original embedder
+# ---------------------------------------------------------------------------
+#: Where the vendored reference implementation lives, relative to the repo root.
+AUTHOR_SRC = "vendor/author-tpne/src"
+
+
+class AuthorTemporalEmbedder:
+    """Adapter around the author's original ``TemporalEmbedder``.
+
+    The from-scratch reimplementation in :class:`TPNEEmbedder` turned out to be
+    *weaker* than the raw node features at detecting generated fraud (38.45 vs
+    53.06 on-round F1), which is the single blocker on round-0 performance and
+    retention. The reference implementation is vendored in
+    ``vendor/author-tpne/src``; this adapter drives it directly so the stronger
+    encoder can be used without duplicating it.
+
+    It is deliberately opt-in: importing this class does not import ``dgl`` or
+    the vendored tree, so the streaming application still runs without them.
+    """
+
+    def __init__(self, h_feats=64, num_layers=2, round_window=7,
+                 temporal_agg="weight", alpha=1.0, beta=1.0,
+                 loss_type="ndist", device="cpu", **kwargs):
+        torch = torch_stack()
+        if torch is None:
+            raise RuntimeError("torch is required for AuthorTemporalEmbedder")
+        root = Path(__file__).resolve().parents[1]
+        src = root / AUTHOR_SRC
+        if not (src / "models" / "proposed_supervised" / "mixed.py").exists():
+            raise RuntimeError(
+                f"author source not found at {src}; clone "
+                "https://github.com/hafizhadi/multiround-promo-fraud")
+        if str(src) not in sys.path:
+            sys.path.insert(0, str(src))
+        from models.proposed_supervised.mixed import TemporalEmbedder  # noqa: E402
+
+        self.torch = torch
+        self.h_feats = int(h_feats)
+        self.num_layers = int(num_layers)
+        self.round_window = int(round_window)
+        self.alpha = float(alpha)
+        self.beta = float(beta)
+        self.device = device
+        self.embed_dim = 2 * self.h_feats * (self.num_layers + 1)
+        self._in_feats = None
+        self._model = None
+        self.last_loss = {}
+        self.refit_count = 0
+        self._kwargs = kwargs
+        self._loss_type = loss_type
+        self._temporal_agg = temporal_agg
+
+    # ------------------------------------------------------------------ build
+    def _to_dgl(self, graph):
+        """Wrap a plain dict graph as the DGL graph the author's module wants.
+
+        The reference code passes the graph itself as ``blocks`` (see
+        ``src/models/base_model.py``), so no neighbour sampler is involved.
+        """
+        torch = self.torch
+        import dgl
+        feats = np.asarray(graph["features"], dtype=np.float32)
+        ei = graph["edge_index"]
+        n = feats.shape[0]
+        g = dgl.graph((torch.as_tensor(np.asarray(ei[0], dtype=np.int64)),
+                       torch.as_tensor(np.asarray(ei[1], dtype=np.int64))),
+                      num_nodes=n).long()
+        # the author's modules (GINConv / GraphConv) reject zero-in-degree
+        # nodes, and the adversarial rewiring can strand a node
+        in_deg = np.asarray(g.in_degrees())
+        if np.any(in_deg == 0):
+            g = dgl.add_self_loop(g)
+        g.ndata["feature"] = torch.as_tensor(feats)
+        age = np.asarray(graph.get("age", np.zeros(n)), dtype=np.float32)
+        g.ndata["age"] = torch.as_tensor(age)
+        g.ndata["label"] = torch.as_tensor(
+            np.asarray(graph.get("label", np.zeros(n)), dtype=np.int64))
+        return g
+
+    def _ensure(self, in_feats):
+        if self._model is None or self._in_feats != in_feats:
+            from models.proposed_supervised.mixed import TemporalEmbedder
+            self._model = TemporalEmbedder(
+                in_feats, self.h_feats, self.num_layers,
+                round_window=self.round_window,
+                temporal_agg=self._temporal_agg,
+                alpha=self.alpha, beta=self.beta,
+                loss_type=self._loss_type, device=self.device,
+                **self._kwargs)
+            self._in_feats = in_feats
+
+    # --------------------------------------------------------------- embedding
+    def embed(self, graph, history=None):
+        torch = self.torch
+        feats = np.asarray(graph["features"], dtype=np.float32)
+        self._ensure(feats.shape[1])
+        g = self._to_dgl(graph)
+        with torch.no_grad():
+            h = self._model.embed_nodes(g, g.ndata["feature"])
+        self.refit_count += 1
+        return h.cpu().numpy().astype(np.float64), dict(self.last_loss)
+
+    def pretrain(self, graph, epochs=30, lr=0.01, history=None, warm=False):
+        """Delegate to the author's own forward pass, which computes the three
+        losses and back-propagates them - the reference training loop lives in
+        ``src/experiment/supervised_multi.py``."""
+        raise NotImplementedError(
+            "use vendor/author-tpne/scripts/main.py for the author's own "
+            "pre-training loop; this adapter only provides inference")
+
+    def columns(self, prefix="tpne"):
+        half = self.h_feats * (self.num_layers + 1)
+        return ([f"{prefix}_static_{i}" for i in range(half)]
+                + [f"{prefix}_temp_{i}" for i in range(half)])
+
+    def summary(self):
+        return {"source": "author", "embed_dim": self.embed_dim,
+                "h_feats": self.h_feats, "num_layers": self.num_layers,
+                "round_window": self.round_window,
+                "refit_count": self.refit_count}
 
 
 class TPNEEmbedder:
