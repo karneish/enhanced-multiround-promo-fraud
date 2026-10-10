@@ -48,10 +48,42 @@ class TestScenario(unittest.TestCase):
 
     def test_query_graph_contains_only_new_nodes(self):
         n0 = self.sc.features.shape[0]
-        q = self.sc.next_round()
+        q, _support = self.sc.next_round()
         self.assertGreater(len(q), 0)
         # every query node must be new, i.e. index >= n0
         self.assertTrue(np.all(np.asarray(q) >= n0))
+
+    def test_query_and_support_are_disjoint(self):
+        q, s = self.sc.next_round()
+        self.assertFalse(set(map(int, q)) & set(map(int, s)),
+                         "query and support graphs must not share nodes")
+
+    def test_support_nodes_are_trainable_and_query_nodes_are_not(self):
+        q, s = self.sc.next_round()
+        self.assertTrue(self.sc.train_mask[np.asarray(s)].all(),
+                        "support nodes must be trainable")
+        self.assertFalse(self.sc.train_mask[np.asarray(q)].any(),
+                         "query nodes must never be trainable")
+
+    def test_trainable_nodes_excludes_the_query_set(self):
+        q, s = self.sc.next_round()
+        trainable = set(map(int, self.sc.trainable_nodes()))
+        self.assertFalse(trainable & set(map(int, q)))
+        self.assertTrue(trainable >= set(map(int, s)))
+
+    def test_stream_events_selects_query_or_support(self):
+        self.sc.next_round()
+        q_only = list(self.sc.stream_events(start_round=1, which="query"))
+        s_only = list(self.sc.stream_events(start_round=1, which="support"))
+        both = list(self.sc.stream_events(start_round=1, which="both"))
+        self.assertEqual(len(both), len(q_only) + len(s_only))
+        self.assertTrue(q_only and s_only)
+        ids_q = {e["event_id"] for e in q_only}
+        self.assertFalse(ids_q & {e["event_id"] for e in s_only})
+
+    def test_invalid_which_is_rejected(self):
+        with self.assertRaises(ValueError):
+            list(self.sc.stream_events(start_round=1, which="nope"))
 
     def test_rounds_grow_the_graph_monotonically(self):
         sizes = [self.sc.features.shape[0]]
@@ -62,7 +94,7 @@ class TestScenario(unittest.TestCase):
         self.assertGreater(sizes[-1], sizes[0])
 
     def test_new_nodes_carry_the_requested_label(self):
-        q = self.sc.next_round()
+        q, _ = self.sc.next_round()
         self.assertTrue(np.all(self.sc.labels[np.asarray(q)] == 1)
                         or True)  # query holds both classes by construction
         pos = self.sc.labels[np.asarray(q)] == 1
@@ -82,7 +114,8 @@ class TestScenario(unittest.TestCase):
         self.sc.next_round()
         self.sc.next_round()
         seeds = self.sc._choose_seeds(1, 5, only_missed=False,
-                                      only_original=True)
+                                      only_original=True, exclusive=True)
+        self.assertGreater(len(seeds), 0)
         for s in seeds:
             self.assertLess(self.sc.creation_round[int(s)], 1)
 

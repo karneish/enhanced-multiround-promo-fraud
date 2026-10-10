@@ -104,9 +104,13 @@ def run(arm, rounds, seed, pretrain_epochs, pretrain_epochs_round,
     base["min_fit_labels"] = 100
     base["retrain_interval_events"] = 10 ** 9
     base["retrain_interval_seconds"] = 10 ** 9
-    base["xgb_rounds"] = int(pretrain_epochs)
+    # The classifier's booster budget is independent of the embedding's
+    # pre-training epochs. The base paper uses 500 estimators
+    # (model_config['n_estimator']); the ensemble defaults to 200 rounds.
+    base["xgb_rounds"] = int(os.environ.get("XGB_ROUNDS", 200))
+    base["xgb_extra_rounds"] = 50
 
-    scenario_cfg = {"adver_choose": "greedy", "adver_mod": "relative",
+    scenario_cfg = {"adver_choose": "greedy", "adver_mod": "replay",
                     "augment": "reage", "round_window": round_window,
                     "round_new_pos": int(0.05 * npos),
                     "round_new_neg": int(0.05 * nneg)}
@@ -133,7 +137,9 @@ def run(arm, rounds, seed, pretrain_epochs, pretrain_epochs_round,
         evs = list(scenario.stream_events())
         y_all = np.array([int(e["label"]) if e["label"] is not None else 0
                           for e in evs])
-        split = int(0.6 * len(y_all))
+        # the author's ratio_test is 0.20, so 80% is available for training;
+        # holding out 40% starved the classifier
+        split = int(float(os.environ.get("TRAIN_FRAC", 0.8)) * len(y_all))
         X0 = E0[:len(evs)]
         head.fit(X0[:split], y_all[:split])
         f1_init = _metrics(y_all[split:], head.predict(X0[split:]))[0]
@@ -141,10 +147,12 @@ def run(arm, rounds, seed, pretrain_epochs, pretrain_epochs_round,
 
         per_round = []
         for r in range(1, rounds + 1):
-            query = scenario.next_round()
+            query, support = scenario.next_round()
             if len(query) == 0:
                 break
-            ev_r = list(scenario.stream_events(start_round=r))
+            ev_r = list(scenario.stream_events(start_round=r, which="query"))
+            if not ev_r:
+                continue
             if incremental and pretrain_epochs_round:
                 emb.pretrain(scenario.graph_dict(),
                              epochs=pretrain_epochs_round, lr=0.01, warm=True)
@@ -161,10 +169,17 @@ def run(arm, rounds, seed, pretrain_epochs, pretrain_epochs_round,
                 "f1_round0_nodes": _metrics(y_all[split:], ret)[0],
                 "n_query": int(len(yr)),
             })
-            # the support graph grows: add THIS round's query nodes only.
-            # The round-0 holdout is deliberately NOT added - it is the
-            # retention measurement, so training on it would fake the +F1 gap.
-            head.fit(Xr, yr)
+
+            # ---- support graph: TRAIN on this round's adversarial nodes
+            # (paper §4: G_tS grows, G_tQ is only ever scored)
+            ev_s = list(scenario.stream_events(start_round=r, which="support"))
+            if ev_s:
+                ys = np.array([int(e["label"]) if e["label"] is not None else 0
+                               for e in ev_s])
+                Xs = E[np.array([int(e["raw"]["node_id"]) for e in ev_s])]
+                head.fit(Xs, ys)
+            # the round-0 holdout is deliberately NOT added: it is the
+            # retention measurement, so training on it would fake the gap.
             scenario.mark_predicted(query, pq.astype(bool))
 
         out.append({"round0": rec0, "rounds": per_round,

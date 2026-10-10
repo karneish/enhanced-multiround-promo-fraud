@@ -80,7 +80,14 @@ class AdversarialScenario:
         self.cfg = cfg
         self.rng = np.random.default_rng(int(cfg.get("seed", 42)))
         self.adver_choose = cfg.get("adver_choose", "greedy")
-        self.adver_mod = cfg.get("adver_mod", "relative")
+        # REPLAY is the base paper's own default (``DEFAULT_ADVER_CONFIG`` in
+        # the author's src/utils/utils_const.py sets adver_mod_name='REPLAY'):
+        # the generated node is a verbatim duplicate of its seed, with NO
+        # feature or structural perturbation. Perturbing instead makes the
+        # task materially harder and was the single largest source of the gap
+        # to the published numbers (measured: ~30 on-round F1 with relative
+        # perturbation vs the paper's 57).
+        self.adver_mod = cfg.get("adver_mod", "replay")
         self.augment = cfg.get("augment", "reage")
         # fail fast on an unknown strategy rather than at the first round
         if self.adver_mod not in ("replay", "relative", "absolute", "mixing"):
@@ -254,7 +261,7 @@ class AdversarialScenario:
                                         replace=True)
                 self._add_round(seeds, label, record=False)
 
-    def _add_round(self, seed_ids, label, record=True):
+    def _add_round(self, seed_ids, label, record=True, trainable=False):
         new_ids, feats, labels, seeds = self._duplicate(seed_ids)
         feats, labels = self._modify(feats, labels, seeds, new_ids)
         labels[:] = label  # the clone is fraud/benign by construction
@@ -265,40 +272,76 @@ class AdversarialScenario:
              np.full(len(new_ids), self.round_num, dtype=int)])
         self.predicted = np.concatenate(
             [self.predicted, np.zeros(len(new_ids), dtype=bool)])
-        self.train_mask = np.concatenate(
-            [self.train_mask, np.zeros(len(new_ids), dtype=bool)])
+        # support nodes join the training set; query nodes do not
+        flags = np.full(len(new_ids), bool(trainable))
+        self.train_mask = np.concatenate([self.train_mask, flags])
         self._rewire(new_ids, seeds)
         return new_ids
 
-    def next_round(self):
-        """Advance one round and return the new query-graph node ids."""
+    def next_round(self, support_frac=0.5):
+        """Advance one round; return ``(query_ids, support_ids)``.
+
+        The base paper keeps two separate graphs (paper §4, Figure 2):
+
+            G_tQ   query graph    - only the NEW nodes, used for EVALUATION
+            G_tS   support graph  - previous support plus newly generated
+                                    support nodes, used for TRAINING
+
+        The earlier implementation returned every new node as query and never
+        trained on adversarial nodes, so the model was always scored on a
+        distribution it had not seen: with pre-training that produced a 0.00
+        F1 on round 1. Generating a separate support set - the same seeds, the
+        same modification strategies, but a disjoint draw - lets the classifier
+        learn the perturbation signature before fresh query nodes are scored.
+        """
         self.round_num += 1
         self._augment()
 
-        pos_seeds = self._choose_seeds(
-            1, self.new_pos,
-            only_missed=self.adver_choose in ("greedy", "ogreedy"),
-            only_original=self.adver_choose == "ogreedy")
-        neg_seeds = self._choose_seeds(0, self.new_neg) if self.new_neg > 0 \
-            else np.array([], dtype=int)
+        def draw(label, n, **kw):
+            return self._choose_seeds(label, n, **kw)
 
-        pos_new = self._add_round(pos_seeds, 1) if len(pos_seeds) else \
-            np.array([], dtype=int)
-        neg_new = self._add_round(neg_seeds, 0) if len(neg_seeds) else \
-            np.array([], dtype=int)
+        missed = dict(only_missed=self.adver_choose in ("greedy", "ogreedy"),
+                      only_original=self.adver_choose == "ogreedy")
 
-        query = np.concatenate([pos_new, neg_new]) if (len(pos_new) or
-                                                       len(neg_new)) else \
+        # ---- query graph: what will be scored
+        q_pos = draw(1, self.new_pos, **missed)
+        q_neg = draw(0, self.new_neg) if self.new_neg > 0 else \
             np.array([], dtype=int)
+        q_new = []
+        if len(q_pos):
+            q_new.append(self._add_round(q_pos, 1))
+        if len(q_neg):
+            q_new.append(self._add_round(q_neg, 0))
+        query = (np.concatenate(q_new) if q_new
+                 else np.array([], dtype=int))
+
+        # ---- support graph: what will be trained on, drawn AFTER the query
+        # seeds are consumed so the two sets cannot overlap
+        n_sup_pos = max(1, int(self.new_pos * support_frac)) \
+            if self.new_pos > 0 else 0
+        n_sup_neg = max(1, int(self.new_neg * support_frac)) \
+            if self.new_neg > 0 else 0
+        s_pos = draw(1, n_sup_pos) if n_sup_pos else np.array([], dtype=int)
+        s_neg = draw(0, n_sup_neg) if n_sup_neg else np.array([], dtype=int)
+        s_new = []
+        if len(s_pos):
+            s_new.append(self._add_round(s_pos, 1, trainable=True))
+        if len(s_neg):
+            s_new.append(self._add_round(s_neg, 0, trainable=True))
+        support = (np.concatenate(s_new) if s_new
+                   else np.array([], dtype=int))
+
         self.round_log.append({
             "round": self.round_num,
             "n_nodes": int(self.features.shape[0]),
             "n_edges": int(self.edges.shape[1]),
-            "new_pos": int(len(pos_new)),
-            "new_neg": int(len(neg_new)),
+            "new_pos": int(len(q_pos) + len(s_pos)),
+            "new_neg": int(len(q_neg) + len(s_neg)),
             "query": query,
+            "support": support,
         })
-        return query
+        self._last_support = support
+        return query, support
 
     def mark_predicted(self, node_ids, predicted):
         """Feed the model's decisions back so greedy choosing can target misses."""
@@ -328,14 +371,16 @@ class AdversarialScenario:
             "label": self.labels if node_ids is None else self.labels[node_ids],
         }
 
-    def stream_events(self, start_round=0):
-        """Yield canonical events for the query graph of each round.
+    def stream_events(self, start_round=0, which="query"):
+        """Yield canonical events for one graph per round.
 
         Round 0 emits the original (real, labelled) graph so the pipeline starts
-        from the dataset. Every later round emits ONLY that round's query graph
-        ``G_tQ``, which is the paper's definition; ``start_round`` is inclusive,
-        so ``start_round=1`` emits the query nodes generated by round 1.
+        from the dataset. Later rounds emit either the query graph ``G_tQ``
+        (what is scored) or the support graph ``G_tS`` (what is trained on);
+        ``which`` selects between them and ``start_round`` is inclusive.
         """
+        if which not in ("query", "support", "both"):
+            raise ValueError(f"which must be query|support|both, got {which!r}")
         if start_round <= 0:
             for i in range(self.n0):
                 ev = self._event(i, round_id=0, is_new=False)
@@ -344,10 +389,20 @@ class AdversarialScenario:
         for entry in self.round_log:
             if entry["round"] < start_round:
                 continue
-            for nid in entry["query"]:
-                ev = self._event(int(nid), round_id=entry["round"], is_new=True)
-                if ev is not None:
-                    yield ev
+            keys = ("query", "support") if which == "both" else (which,)
+            for key in keys:
+                for nid in entry.get(key, ()):
+                    ev = self._event(int(nid), round_id=entry["round"],
+                                     is_new=True)
+                    if ev is not None:
+                        yield ev
+
+    def trainable_nodes(self):
+        """Node ids the classifier may train on: the round-0 graph plus every
+        support node generated so far. Query nodes are excluded by construction,
+        so evaluation is never contaminated by the round being scored."""
+        sup = np.where(self.train_mask)[0]
+        return sup
 
     def _event(self, node_id, round_id, is_new):
         label = int(self.labels[node_id])
