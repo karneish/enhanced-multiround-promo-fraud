@@ -139,6 +139,7 @@ class AuthorTemporalEmbedder:
         self.embed_dim = 2 * self.h_feats * (self.num_layers + 1)
         self._in_feats = None
         self._model = None
+        self.pretrained = False
         self.last_loss = {}
         self.refit_count = 0
         self._kwargs = kwargs
@@ -196,12 +197,35 @@ class AuthorTemporalEmbedder:
         return h.cpu().numpy().astype(np.float64), dict(self.last_loss)
 
     def pretrain(self, graph, epochs=30, lr=0.01, history=None, warm=False):
-        """Delegate to the author's own forward pass, which computes the three
-        losses and back-propagates them - the reference training loop lives in
-        ``src/experiment/supervised_multi.py``."""
-        raise NotImplementedError(
-            "use vendor/author-tpne/scripts/main.py for the author's own "
-            "pre-training loop; this adapter only provides inference")
+        """Train the reference embedder with Adam on the paper's three losses.
+
+        The reference implementation returns ``(h_final, loss)`` from
+        ``forward`` where ``loss`` is
+        ``(L_recon + a*L_disent + b*L_temp) / (1 + a + b)`` and is fully
+        differentiable, so it can be optimised directly. This is what the
+        author's ``src/experiment/supervised_multi.py`` does over up to 500
+        epochs per round; without it the encoder is random and worse than the
+        raw node features.
+        """
+        torch = self.torch
+        feats = np.asarray(graph["features"], dtype=np.float32)
+        self._ensure(feats.shape[1])
+        g = self._to_dgl(graph)
+        x = g.ndata["feature"]
+        opt = torch.optim.Adam(self._model.parameters(), lr=lr)
+        last = {}
+        for _ in range(int(epochs)):
+            opt.zero_grad()
+            _h, loss = self._model.forward(g, x)
+            loss.backward()
+            torch.nn.utils.clip_grad_norm_(self._model.parameters(), 5.0)
+            opt.step()
+            log = getattr(self._model, "latest_trainlog", {}) or {}
+            last = {k: float(v) for k, v in log.items() if isinstance(v, (int, float))}
+            last["final"] = float(loss)
+        self.last_loss = last
+        self.pretrained = True
+        return last
 
     def columns(self, prefix="tpne"):
         half = self.h_feats * (self.num_layers + 1)

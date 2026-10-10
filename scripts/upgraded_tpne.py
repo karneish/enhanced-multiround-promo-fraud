@@ -112,9 +112,95 @@ def tune_threshold(head, X, y, grid=None):
     return best
 
 
+
+class DualViewHead:
+    """Two heads over two feature views, averaged.
+
+    The ablation shows the two views win on different metrics:
+
+        view          RT-f1_0   RT-avg_f1
+        embedding       57.25      38.45
+        raw features    47.63      53.06
+
+    The embedding carries the graph structure that round-0 performance needs,
+    but with ``adver_mod='replay'`` a query node is a *verbatim duplicate* of
+    its seed, so the raw feature vector identifies it perfectly while the
+    embedding smooths it into its neighbourhood and destroys that signal.
+    Concatenating them lets the 384 embedding dimensions dilute the 10 raw
+    ones; keeping two separate heads and averaging their probabilities does
+    not.
+    """
+
+    def __init__(self, cfg, columns, seed, kind="ensemble"):
+        self.kind = kind
+        self.h_raw = Head(kind, cfg, columns, seed)
+        self.h_emb = Head(kind, cfg, columns, seed)
+        self.threshold = 0.5
+
+    def fit(self, X_raw, X_emb, y):
+        self.h_raw.fit(X_raw, y)
+        self.h_emb.fit(X_emb, y)
+
+    def predict_proba(self, X_raw, X_emb, w_raw=0.5):
+        return (w_raw * self.h_raw.predict_proba(X_raw)
+                + (1.0 - w_raw) * self.h_emb.predict_proba(X_emb))
+
+    def predict(self, X_raw, X_emb, thr=None, w_raw=0.5):
+        return (self.predict_proba(X_raw, X_emb, w_raw)
+                >= (self.threshold if thr is None else thr)).astype(int)
+
+
+
+def tune_threshold_dual(head, Xr, Xe, y, rw):
+    from sklearn.metrics import f1_score
+    probs = head.predict_proba(Xr, Xe, rw)
+    best, bf = 0.5, -1.0
+    for k in range(1, 20):
+        th = round(0.05 * k, 2)
+        f = f1_score(y, (probs >= th).astype(int), zero_division=0)
+        if f > bf:
+            best, bf = th, f
+    return best
+
+
+def _dual_rounds(scenario, emb, head, kind, E0, X0_raw, X0_emb, y_all,
+                 split, rounds, rw, pt_epochs, incremental, embedder):
+    per_round = []
+    for r in range(1, rounds + 1):
+        query, support = scenario.next_round()
+        if len(query) == 0:
+            break
+        ev_q = list(scenario.stream_events(start_round=r, which="query"))
+        if not ev_q:
+            continue
+        if incremental and pt_epochs and embedder != "author":
+            emb.pretrain(scenario.graph_dict(), epochs=pt_epochs,
+                         lr=0.01, warm=True)
+        E, _ = emb.embed(scenario.graph_dict())
+        ids_q = [int(e["raw"]["node_id"]) for e in ev_q]
+        yq = np.array([int(e["label"]) if e["label"] is not None else 0
+                       for e in ev_q])
+        RAW = np.asarray(scenario.features, dtype=np.float64)
+        pq = head.predict(RAW[ids_q], E[ids_q], None, rw)
+        ret = head.predict(X0_raw[split:], X0_emb[split:], head.threshold, rw)
+        per_round.append({
+            "round": r, "f1_query": _metrics(yq, pq)[0],
+            "recall_query": _metrics(yq, pq)[1],
+            "f1_round0_nodes": _metrics(y_all[split:], ret)[0],
+            "n_query": int(len(yq))})
+        ev_s = list(scenario.stream_events(start_round=r, which="support"))
+        if ev_s:
+            ids_s = [int(e["raw"]["node_id"]) for e in ev_s]
+            ys = np.array([int(e["label"]) if e["label"] is not None else 0
+                           for e in ev_s])
+            head.fit(RAW[ids_s], E[ids_s], ys)
+        scenario.mark_predicted(query, pq.astype(bool))
+    return per_round
+
+
 def run(arm, rounds, seed, pretrain_epochs, pretrain_epochs_round,
         trials, buffer_max, h_feats, round_window, features="embed",
-        embedder="ours"):
+        embedder="ours", dual=False, raw_weight=0.5):
     graph = load_tolokers()
     npos = int((graph["label"] == 1).sum())
     nneg = int((graph["label"] == 0).sum())
@@ -155,7 +241,9 @@ def run(arm, rounds, seed, pretrain_epochs, pretrain_epochs_round,
                                mode="incremental" if incremental else "offline",
                                seed=s)
         emb_cols = emb.columns()
-        head = Head(kind, base, emb_cols, s)
+        head = (DualViewHead(base, emb_cols, s, kind) if dual
+                else Head(kind, base, emb_cols, s))
+        rw = raw_weight
 
         t0 = time.time()
         if pretrain_epochs and embedder != "author":
@@ -188,7 +276,30 @@ def run(arm, rounds, seed, pretrain_epochs, pretrain_epochs_round,
         n_val = int(0.20 * n)
         split = n - n_test - n_val          # train end
         val_slice = slice(split, split + n_val)
+        X0_raw = np.asarray(scenario.features, dtype=np.float64)[:len(evs)]
+        X0_emb = E0[:len(evs)]
         X0 = feats_for(np.arange(len(evs)), E0)
+        if dual:
+            head.fit(X0_raw, X0_emb, y_all[:split])
+            thr = tune_threshold_dual(head, X0_raw[val_slice],
+                                      X0_emb[val_slice], y_all[val_slice], rw)
+            print(f"  dual threshold {thr:.3f} (raw weight {rw})", flush=True)
+            f1_init = _metrics(y_all[split:],
+                               head.predict(X0_raw[split:], X0_emb[split:],
+                                            thr, rw))[0]
+            rec0 = {"f1_initial": f1_init, "f1_round0_nodes": f1_init,
+                    "threshold": thr}
+            per_round = _dual_rounds(scenario, emb, head, kind, E0, X0_raw,
+                                     X0_emb, y_all, split, rounds, rw,
+                                     pretrain_epochs_round, incremental,
+                                     embedder)
+            out.append({"round0": rec0, "rounds": per_round,
+                        "seconds": 0.0, "embed_summary": emb.summary()})
+            m = rt_metrics([out[-1]])
+            print(f"  DUAL trial {trial}: avg_f1="
+                  f"{(m['RT-avg_f1_t>0'] or 0)*100:.2f} recall="
+                  f"{(m['RT-recall_0'] or 0)*100:.2f}", flush=True)
+            continue
         head.fit(X0[:split], y_all[:split])
         # ---- threshold selection on the validation split only
         thr = 0.5 if os.environ.get("NO_TUNE") else tune_threshold(
@@ -277,6 +388,10 @@ def main():
                     choices=["ours", "author"],
                     help="'ours' = the from-scratch TPNE port; 'author' = the "
                          "reference TemporalEmbedder vendored in vendor/")
+    ap.add_argument("--dual-view", action="store_true",
+                    help="train two heads (raw + embedding) and average "
+                         "their probabilities")
+    ap.add_argument("--raw-weight", type=float, default=0.5)
     ap.add_argument("--out", default=None)
     a = ap.parse_args()
 
@@ -300,7 +415,8 @@ def main():
         os.environ["NO_TUNE"] = "1"
     recs = run(a.arm, a.rounds, a.seed, a.pretrain_epochs,
                a.pretrain_epochs_round, a.trials, a.buffer_max,
-               a.h_feats, a.round_window, a.features, a.embedder)
+               a.h_feats, a.round_window, a.features, a.embedder,
+               dual=a.dual_view, raw_weight=a.raw_weight)
     summary = rt_metrics(recs)
     # Strict parity with the base paper: its `round_num = 3` run emits query
     # rows for rounds 1 and 2 only, so RT-avg_f1_t>0 is a mean over exactly
