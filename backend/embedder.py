@@ -218,14 +218,19 @@ class TPNEEmbedder:
         A = (sp.diags(1.0 / deg) @ A).tocsr()
         coo = A.tocoo()
         pattern = (coo.row, coo.col, coo.data)
-        A_t = torch.tensor(A.toarray().astype(np.float32), device=self.device)
+        idx = torch.tensor(np.vstack([coo.row, coo.col]), dtype=torch.long,
+                           device=self.device)
+        val = torch.tensor(coo.data.astype(np.float32), device=self.device)
+        # Sparse rather than dense: the dense form is 553 MB at 11,758 nodes
+        # and made multi-epoch pre-training impossible on 7 GB of RAM.
+        A_t = torch.sparse_coo_tensor(idx, val, (n, n)).coalesce()
         self._adj_sig = sig
         self._adj_t = A_t
         self._adj_pattern = pattern
         return A_t, pattern
 
     def _propagate_t(self, graph, feats):
-        """Differentiable propagation, mirroring ``_propagate_np``."""
+        """Differentiable propagation, mirroring ``_propagate_np`` (sparse)."""
         torch = self.torch
         n = feats.shape[0]
         A_t, _ = self._adjacency(graph, n)
@@ -233,7 +238,7 @@ class TPNEEmbedder:
         h = self._leaky_t(h)
         layers = [h]
         for i in range(self.num_layers):
-            h = (A_t @ h) @ self.gnn_layers[i].linear.weight.T
+            h = torch.sparse.mm(A_t, h) @ self.gnn_layers[i].linear.weight.T
             h = self._norm_t(h)
             h = self._leaky_t(h)
             layers.append(h)
@@ -255,7 +260,7 @@ class TPNEEmbedder:
         h = self._norm_t(feats)
         layers = [h]
         for _ in range(self.num_layers):
-            h = self._norm_t(A_t @ h)
+            h = self._norm_t(torch.sparse.mm(A_t, h))
             layers.append(h)
         return torch.cat(layers, dim=1), A_t, pattern
 

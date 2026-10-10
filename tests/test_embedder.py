@@ -191,7 +191,7 @@ class TestPretraining(unittest.TestCase):
                          dtype=torch.float32)
         A, pattern = e._adjacency(self.graph, n)
         got = e._mean_dist_t(A, h, pattern).squeeze(1).numpy()
-        ref = (A * torch.cdist(h, h)).sum(dim=1).numpy()
+        ref = (A.to_dense() * torch.cdist(h, h)).sum(dim=1).numpy()
         self.assertLess(np.abs(got - ref).max(), 1e-2)
 
 
