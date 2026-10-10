@@ -364,8 +364,11 @@ def run(arm, rounds, seed, pretrain_epochs, pretrain_epochs_round,
         # the query sets or on the retention set.
         if split_mode == "masks":
             i_tr, i_va, i_te = author_split(graph, seed=seed + trial)
-            split = split_end = int(i_tr.max()) + 1
-            val_slice = slice(int(i_va.min()), int(i_va.max()) + 1)
+            # The author's train/val masks pick an arbitrary, NON-contiguous
+            # subset of nodes, so they must be consumed as index arrays.
+            # Reducing them to range(i_tr.max())+1 swept nodes 0..11751 into
+            # training and 1..11757 into validation, which put ~100% of the
+            # retention set into both -- i.e. train-on-test.
             train_idx, val_idx, test_idx = i_tr, i_va, i_te
         else:
             n = len(y_all)
@@ -422,10 +425,11 @@ def run(arm, rounds, seed, pretrain_epochs, pretrain_epochs_round,
                   f"{(m['RT-avg_f1_t>0'] or 0)*100:.2f} recall="
                   f"{(m['RT-recall_0'] or 0)*100:.2f}", flush=True)
             continue
-        head.fit(X0[:split], y_all[:split])
+        # ---- train on the support split only; the retention set is never seen
+        head.fit(X0[train_idx], y_all[train_idx])
         # ---- threshold selection on the validation split only
         thr = 0.5 if os.environ.get("NO_TUNE") else tune_threshold(
-            head, X0[val_slice], y_all[val_slice])
+            head, X0[val_idx], y_all[val_idx])
         print(f"  threshold: {thr:.3f} "
               f"(val F1 {_metrics(y_all[val_idx], head.predict(X0[val_idx], thr))[0]*100:.2f}, "
               f"val F1@0.5 {_metrics(y_all[val_idx], head.predict(X0[val_idx], 0.5))[0]*100:.2f})",

@@ -1,0 +1,167 @@
+{
+  "RT-f1_0_start": 0.5488862961049906,
+  "RT-f1_0_end": 0.5516666176861315,
+  "RT-f1_0_gap": 0.002780321581140832,
+  "RT-avg_f1_t>0": 0.5451055165456301,
+  "RT-recall_0": 0.7421875,
+  "n_rounds": 3,
+  "RT-avg_f1_strict_parity": 0.535447553102913,
+  "strict_per_trial": [
+    56.88,
+    43.49,
+    60.26
+  ],
+  "arm": "ensemble",
+  "trials": 3,
+  "pretrain_epochs": 0,
+  "buffer_max": 60000,
+  "per_trial": [
+    {
+      "round0": {
+        "f1_initial": 0.5451737451737452,
+        "f1_round0_nodes": 0.5451737451737452,
+        "threshold": 0.25
+      },
+      "rounds": [
+        {
+          "round": 1,
+          "f1_query": 0.5532994923857868,
+          "recall_query": 0.8515625,
+          "f1_round0_nodes": 0.5451737451737452,
+          "n_query": 587
+        },
+        {
+          "round": 2,
+          "f1_query": 0.5842696629213483,
+          "recall_query": 0.8125,
+          "f1_round0_nodes": 0.5510989010989011,
+          "n_query": 587
+        },
+        {
+          "round": 3,
+          "f1_query": 0.558904109589041,
+          "recall_query": 0.796875,
+          "f1_round0_nodes": 0.5556792873051225,
+          "n_query": 587
+        }
+      ],
+      "seconds": 265.5,
+      "embed_summary": {
+        "available": true,
+        "mode": "offline",
+        "embed_dim": 384,
+        "h_feats": 64,
+        "num_layers": 2,
+        "round_window": 7,
+        "alpha": 1.0,
+        "beta": 1.0,
+        "temporal_agg": "weight",
+        "refit_count": 4,
+        "last_loss": {
+          "recon": 0.0,
+          "disen": 0.8592205073965564,
+          "temp": 0.7147034374412491,
+          "final": 0.5246413149459351
+        }
+      }
+    },
+    {
+      "round0": {
+        "f1_initial": 0.5412186379928315,
+        "f1_round0_nodes": 0.5412186379928315,
+        "threshold": 0.35
+      },
+      "rounds": [
+        {
+          "round": 1,
+          "f1_query": 0.2469135802469136,
+          "recall_query": 0.15625,
+          "f1_round0_nodes": 0.5412186379928315,
+          "n_query": 587
+        },
+        {
+          "round": 2,
+          "f1_query": 0.6229508196721312,
+          "recall_query": 0.890625,
+          "f1_round0_nodes": 0.5462051444903143,
+          "n_query": 587
+        },
+        {
+          "round": 3,
+          "f1_query": 0.5852272727272727,
+          "recall_query": 0.8046875,
+          "f1_round0_nodes": 0.5393041237113403,
+          "n_query": 587
+        }
+      ],
+      "seconds": 330.2,
+      "embed_summary": {
+        "available": true,
+        "mode": "offline",
+        "embed_dim": 384,
+        "h_feats": 64,
+        "num_layers": 2,
+        "round_window": 7,
+        "alpha": 1.0,
+        "beta": 1.0,
+        "temporal_agg": "weight",
+        "refit_count": 4,
+        "last_loss": {
+          "recon": 0.0,
+          "disen": 1.0033900149029837,
+          "temp": 0.7043061309972198,
+          "final": 0.5692320486334012
+        }
+      }
+    },
+    {
+      "round0": {
+        "f1_initial": 0.5602665051483949,
+        "f1_round0_nodes": 0.5602665051483949,
+        "threshold": 0.35
+      },
+      "rounds": [
+        {
+          "round": 1,
+          "f1_query": 0.6046511627906976,
+          "recall_query": 0.7109375,
+          "f1_round0_nodes": 0.5602665051483949,
+          "n_query": 587
+        },
+        {
+          "round": 2,
+          "f1_query": 0.6006006006006006,
+          "recall_query": 0.78125,
+          "f1_round0_nodes": 0.5610800131708923,
+          "n_query": 587
+        },
+        {
+          "round": 3,
+          "f1_query": 0.5491329479768786,
+          "recall_query": 0.7421875,
+          "f1_round0_nodes": 0.5683574067853544,
+          "n_query": 587
+        }
+      ],
+      "seconds": 343.2,
+      "embed_summary": {
+        "available": true,
+        "mode": "offline",
+        "embed_dim": 384,
+        "h_feats": 64,
+        "num_layers": 2,
+        "round_window": 7,
+        "alpha": 1.0,
+        "beta": 1.0,
+        "temporal_agg": "weight",
+        "refit_count": 4,
+        "last_loss": {
+          "recon": 0.0,
+          "disen": 1.0351809990639464,
+          "temp": 0.7131229821039741,
+          "final": 0.5827679937226402
+        }
+      }
+    }
+  ]
+}

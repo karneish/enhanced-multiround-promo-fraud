@@ -41,6 +41,19 @@ feature ablation shows why: our re-implemented TPNE embedding scores **38.45**
 on generated fraud where the raw node features score **53.06**. The remaining
 work is to use the author's original embedder rather than our port. See §4.2c.
 
+> ### ⚠ Retraction (later than the table above)
+>
+> A subsequent `--split masks` comparison reported that all four metrics beat
+> the paper, headlined by "RT-avg_f1 70.57 vs 57.09". **That was wrong.** The
+> masks split had been reduced to contiguous node ranges, which swept **100% of
+> the retention set into both training and threshold-tuning**. It was
+> train-on-test, and the reported margin was entirely an artifact of it.
+>
+> After the fix this project **does not beat the paper**: RT-f1₀ 54.89 vs 66.56,
+> RT-avg_f1 54.51 vs 57.09. The table in this section was measured on the
+> `holdout` split and is unaffected. See §4.2e, §4.2g and §4.2h for the
+> diagnosis, the root cause of the 94.39 figure, and the corrected numbers.
+
 ---
 
 ## 2. Environment
@@ -338,37 +351,42 @@ cd scripts
 .venv-tpne/bin/python scripts/evaluate.py --limit 40000 --holdout 10000 --v-features
 ```
 
+### 4.2e RETRACTION — the masks split was training on the test set
 
-### 4.2e The split was the confound — all four metrics now exceed the paper
+This section previously reported that under `--split masks` all four metrics
+exceeded the paper, headlined by "RT-avg_f1 70.57 vs 57.09, +13.48". **That
+result was invalid and is retracted.** It was caused by a defect in the split,
+not by any property of the model.
 
-The comparison had been run on a random 80/20 holdout. The base paper does not
-use one: `tolokers_bid` ships **20 predefined mask columns** (train 50 %, val
-25 %, test 25 %), and the reference implementation takes the *train* mask as
-the working pool, splits it `ratio_train` (0.60) into train/val, and evaluates
-the **complement of the pool** as the test set — pool 5,879 / train 3,527 /
-val 2,352 / test 5,879.
+The author's predefined mask columns select an arbitrary, **non-contiguous**
+subset of nodes. The pipeline consumed them as contiguous ranges:
 
-`--split masks` reproduces that exactly. Under it, on the same three trials:
+```python
+split      = i_tr.max() + 1                       # 11752
+val_slice  = slice(i_va.min(), i_va.max() + 1)    # 1..11757
+head.fit(X0[:split], y_all[:split])
+```
 
-| Metric | Author TPNE-XGB (n=5) | This repo (n=3) | Delta |
-|---|---|---|---|
-| RT-f1₀ start | 66.56 ± 0.75 | **68.38 ± 0.13** | 🟢 +1.82 |
-| RT-f1₀ end | 66.95 ± 2.53 | **68.20 ± 0.28** | 🟢 +1.25 |
-| **RT-avg_f1_{t>0}** | **57.09 ± 2.33** | **70.57 ± 1.57** | 🟢 **+13.48** |
-| RT-recall₀ | 27.50 ± 5.62 | **81.77 ± 1.63** | 🟢 +54.27 |
+Because the masks are sparse and spread over the whole node range, `i_tr.max()`
+lands at 11751. So the model was trained on nodes 0..11751 and the threshold
+was tuned on nodes 1..11757. Measured overlap with the 5,879-node retention set:
 
-**All four metrics exceed the reproduced author numbers.** This is a
-corrected-comparison result, not a new capability: the earlier "degraded"
-verdict was measuring against a split the paper never uses. The same
-configuration on the 80/20 holdout still scores 53.06 on RT-avg_f1, so the
-model did not improve — the comparison did.
+| Slice | Overlap with retention set |
+|---|---|
+| training `range(11752)` | **5,877 / 5,879 (100.0%)** |
+| validation `range(1, 11758)` | **5,879 / 5,879 (100.0%)** |
+| real train index array | 0 (disjoint) |
+| real validation index array | 0 (disjoint) |
 
-The honest caveat: RT-avg_f1 and RT-recall depend on the adversarial node
-generation, and that is still our port rather than the author's. The
-round-0 metrics are the clean like-for-like, because round 0 uses only the
-real dataset — no generated nodes — so dataset, split and protocol are all
-identical there. **RT-f1₀ 68.38 vs 66.56 is the defensible claim; the
-RT-avg_f1 margin carries the scenario-parity caveat.**
+That is train-on-test, and it also meant the "validation" F1 used to pick the
+threshold contained the entire test set. The leakage was invisible because a
+high-dimensional random projection lets the trees interpolate the memorised
+rows far better than 10 raw features do, which is exactly why the corruption
+was largest for `--features embed`.
+
+Fixed by consuming the masks as index arrays (`X0[train_idx]`,
+`X0[val_idx]`), matching what the `dual` and `view-switch` branches already
+did. `tests/test_split.py` pins the behaviour down from three angles.
 
 ### 4.2f Scenario parity: a REPLAY clone must inherit its seed's edges
 
@@ -388,67 +406,64 @@ node where the reference sees a normal one.
 Fixed. After the fix, query nodes have mean degree 378.7 against an original
 mean of 382.4, with zero isolated nodes. Three tests lock it in.
 
-**Effect on the headline result: none, and that is itself informative.** The
-winning configuration uses `--features raw`, which reads the 10 raw node
-feature columns and never touches the graph, so edge inheritance cannot affect
-it. Re-running the full 3-trial matrix produced byte-identical numbers:
+This is a genuine correctness fix, and it is worth keeping regardless of what
+the scoreboard says. It is **not** what carried any headline number: the
+previously-quoted raw-feature configuration reads the 10 raw node feature
+columns and never touches the graph, so edge inheritance cannot affect it.
 
-  trial 0: 68.49 / 70.98 / 81.25
-  trial 1: 68.42 / 69.26 / 83.59
-  trial 2: 68.23 / 69.76 / 80.47
+### 4.2g The 94.39 round-0 figure is root-caused — it was the same leakage
 
-So the claim is unchanged (RT-avg_f1 70.57 vs the author's 57.09), but it
-should be stated accurately: **this project beats the paper on this benchmark
-by using the raw node features and the adaptive ensemble, not by improving
-TPNE.** The graph encoder — the paper's actual contribution — scores 38.45
-here and is not what carries the result.
+This figure was previously reported as "unexplained, not claimed". It is now
+explained, and the explanation is the bug in §4.2e: with ~100% of the retention
+set in the training slice, an embedding that ranks at AUC 0.83 in a clean
+setting scores 0.94 F1 when those same rows were trained on.
 
-**Unresolved.** With `--features embed` after the parity fix, round-0 F1 rose
-to an implausible 94.39 while query F1 fell to 23.01. Those two cannot both
-be right. An untrained encoder producing a near-perfect round-0 score and a
-near-worthless query score is more consistent with a degenerate representation
-than with a genuine improvement, and it has not been diagnosed. The
-raw-feature result is unaffected and is what is reported.
+The evidence that ruled out the alternatives:
 
-### 4.2g The 94.39 round-0 figure is unexplained, and is NOT claimed
+- **Not label leakage in the features.** A label-permutation control collapses
+  every view to chance, so the encoder does not encode `y`:
+  embed AUC 0.5008, raw 0.4934, both 0.5024 (against 0.8246 / 0.7302 / 0.8300
+  with real labels).
+- **Not a threshold artifact.** Validation and test prevalence both equal
+  0.218, and val/test F1 track each other across the threshold sweep.
+- **Not a lucky draw.** The pipeline reproduced ~94 across five separate
+  processes while every faithful reimplementation returned 0.52-0.55.
 
-`--features embed` reported a round-0 F1 of ~94 on the masks split, which is
-implausible: published F-measures on this dataset sit well below that. It was
-investigated and **could not be reproduced outside the exact pipeline
-invocation**, so it is reported as an open defect rather than a result.
+The reimplementations were correct all along; they differed from the pipeline
+in one respect only — they used `X0[train_idx]` instead of `X0[:split]`. After
+the fix the pipeline agrees with them: **54.89**, not 94.
 
-What was established:
+### 4.2h Corrected results — we do not beat the paper
 
-| Step | Pipeline | Isolated replication |
-|---|---|---|
-| masks split sizes / overlap | 3,527 / 2,352 / 5,879, overlap 0 | identical |
-| label vector from events vs graph | identical (0 mismatches) | identical |
-| embedding shape / aggregate stats | 11758x384, colstd 0.024 | 11758x384, colstd 0.021 |
-| test F1 | **0.94** | **0.52 - 0.55** |
+Re-measured on the paper's masks protocol, n=3, after the split fix:
 
-Repeated attempts all returned the low figure:
-- 4 explicit `torch.manual_seed` values: 0.5243, 0.5316, 0.5338, 0.5367
-- 3 sequential embedders in one process (no manual seed): 0.5321, 0.5193, 0.5440
-- the pipeline's own `Head` class with the pipeline's own `base` config: 0.5266 @0.5, 0.5475 tuned, val 0.5630
+| Metric | Author TPNE-XGB (n=5) | This repo, raw (n=3) | This repo, embed (n=3) |
+|---|---|---|---|
+| RT-f1₀ start | 66.56 ± 0.75 | 46.49 ± 0.34 | 54.89 ± 0.82 |
+| RT-avg_f1_{t>0} | **57.09 ± 2.33** | 51.78 ± 1.29 | 54.51 ± 4.32 |
+| RT-recall₀ | 27.50 ± 5.62 | 84.11 ± 2.42 | 78.13 ± 2.78 |
 
-The pipeline itself reproduces the high figure reliably across processes
-(0.9418, 0.9459, 0.9444, 0.9431, 0.9388), so it is not a one-off lucky draw.
+**The honest position is that this project does not beat the paper.** It loses
+round-0 F1 by 11.7 points, and the RT-avg_f1 gap (2.6 points) is within about
+one standard deviation — i.e. not a win. Recall is much higher, but that is a
+threshold-driven precision/recall trade, not a capability: pushing the
+threshold down to 0.25-0.35 is what produces it.
 
-Signal check on the embedding, which is what makes 0.94 implausible:
+Two further measured facts bound what is achievable here:
 
-| Quantity | Value |
-|---|---|
-| max abs correlation between any embedding column and the label | 0.3117 |
-| the same for the raw node features | 0.2376 |
-| single-direction AUC on the test split | 0.7109 |
+- **Training the encoder is not the missing piece.** Driving the author's own
+  `TemporalEmbedder` through its own `L_recon`/`L_dent`/`L_temp` loss for 100
+  epochs converges the loss from 0.571 to 0.235 while round-0 F1 stays flat at
+  ~0.53 and AUC moves 0.8045 -> 0.8103 (`scripts/embedder_training_curve.py`).
+- **The embedding has an information ceiling.** Its ranking quality is pinned
+  at AUC ~0.82 regardless of classifier or class balancing; reaching the paper's
+  F1 of 0.6647 needs roughly AUC 0.90. Their `train_predictor` uses
+  `scale_pos_weight` with early stopping; replicating that exactly (sweeping
+  spw 1-5) left AUC at 0.814-0.820 and F1 at 0.43-0.49.
 
-An untrained embedding with per-column correlation ≤0.31 and a 0.71 AUC
-cannot produce 0.94 F1 through a tree model. The discrepancy was **not
-root-caused**; something in the `upgraded_tpne.py` execution path differs from
-the isolated replications in a way that was not found.
+So the ported encoder is genuinely weaker than the authors', and that — not
+thresholding, not class weighting, not pre-training budget — is what separates
+us from the paper.
 
-**Consequently the only claimed result remains the raw-feature one**, which is
-reproducible and stable across trials: RT-f1_0 68.38, RT-avg_f1 70.57,
-RT-recall 81.77. The ~94 figure is not used, cited, or relied on anywhere, and
-`--features embed` should be treated as unvalidated until this is resolved.
-
+The `--features raw` ablation and the §4.1 control numbers were produced on the
+`holdout` split, which is contiguous and was never affected; §1 still stands.
