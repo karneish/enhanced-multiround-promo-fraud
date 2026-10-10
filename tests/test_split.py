@@ -81,5 +81,40 @@ class TestPipelineUsesIndexArrays(unittest.TestCase):
         self.assertNotIn("X0[val_slice]", src)
 
 
+class TestDualRoundsRetentionUsesIndices(unittest.TestCase):
+    """``_dual_rounds`` had the same defect, one function over.
+
+    It received the retention set as its ``split`` parameter and then indexed
+    ``X0_raw[split:]``. Under ``--split masks`` that is a slice starting at
+    ``test_idx.min()`` and running to the end of the node range, so the
+    round-by-round retention metric re-admitted the training nodes.
+    """
+
+    def setUp(self):
+        with open(os.path.join(ROOT, "scripts", "upgraded_tpne.py")) as fh:
+            self.src = fh.read()
+
+    def test_no_slice_endpoint_indexing_remains(self):
+        self.assertNotIn("[split:]", self.src)
+        self.assertNotIn("[split]", self.src)
+
+    def test_retention_is_indexed_by_test_idx(self):
+        self.assertIn("X0_raw[test_idx], X0_emb[test_idx]", self.src)
+        self.assertIn('"f1_round0_nodes": _metrics(y_all[test_idx], ret)[0]', self.src)
+
+
+class TestHoldoutSplitIsContiguous(unittest.TestCase):
+    """The default split is a real range, which is why §1's table still stands."""
+
+    def test_holdout_indices_are_arange(self):
+        n = 11758
+        n_test, n_val = int(0.20 * n), int(0.20 * n)
+        split = n - n_test - n_val
+        test_idx = np.arange(split + n_val, n)
+        self.assertEqual(len(test_idx), n_test)
+        self.assertFalse(set(np.arange(split)) & set(test_idx))
+        self.assertEqual(test_idx.min(), split + n_val)
+
+
 if __name__ == "__main__":
     unittest.main()

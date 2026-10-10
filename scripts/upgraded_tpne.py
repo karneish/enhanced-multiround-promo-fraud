@@ -170,7 +170,14 @@ def tune_threshold_dual(head, Xr, Xe, y, rw):
 
 
 def _dual_rounds(scenario, emb, head, kind, E0, X0_raw, X0_emb, y_all,
-                 split, rounds, rw, pt_epochs, incremental, embedder):
+                 test_idx, rounds, rw, pt_epochs, incremental, embedder):
+    """Score query rounds and the round-0 retention set.
+
+    ``test_idx`` is an index array, never a slice endpoint. Treating it as one
+    (``X0_raw[test_idx:]``) silently starts at ``test_idx.min()`` and runs to
+    the end of the node range, which in ``--split masks`` re-admits the whole
+    training set into the retention measurement.
+    """
     per_round = []
     for r in range(1, rounds + 1):
         query, support = scenario.next_round()
@@ -188,11 +195,12 @@ def _dual_rounds(scenario, emb, head, kind, E0, X0_raw, X0_emb, y_all,
                        for e in ev_q])
         RAW = np.asarray(scenario.features, dtype=np.float64)
         pq = head.predict(RAW[ids_q], E[ids_q], None, rw)
-        ret = head.predict(X0_raw[split:], X0_emb[split:], head.threshold, rw)
+        ret = head.predict(X0_raw[test_idx], X0_emb[test_idx],
+                           head.threshold, rw)
         per_round.append({
             "round": r, "f1_query": _metrics(yq, pq)[0],
             "recall_query": _metrics(yq, pq)[1],
-            "f1_round0_nodes": _metrics(y_all[split:], ret)[0],
+            "f1_round0_nodes": _metrics(y_all[test_idx], ret)[0],
             "n_query": int(len(yq))})
         ev_s = list(scenario.stream_events(start_round=r, which="support"))
         if ev_s:

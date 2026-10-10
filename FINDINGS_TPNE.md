@@ -467,3 +467,42 @@ us from the paper.
 
 The `--features raw` ablation and the §4.1 control numbers were produced on the
 `holdout` split, which is contiguous and was never affected; §1 still stands.
+
+### 4.2i A second instance of the same defect, in the dual-view branch
+
+Auditing the rest of the benchmark for the §4.2e pattern turned up one more.
+`_dual_rounds` received the retention set through a parameter named `split` and
+indexed it as a slice endpoint:
+
+```python
+ret = head.predict(X0_raw[split:], X0_emb[split:], head.threshold, rw)
+"f1_round0_nodes": _metrics(y_all[split:], ret)[0],
+```
+
+The caller passes `test_idx`, an **index array**. `X0_raw[test_idx:]` starts at
+`test_idx.min()` and runs to the end of the node range, so under `--split masks`
+the round-by-round retention metric re-admitted the training nodes every round.
+Under `holdout` the same expression happened to be correct, because `test_idx`
+there begins exactly at the split point — which is why the bug survived
+alongside the §4.2e one.
+
+Fixed to index by `test_idx`. `tests/test_split.py` now asserts no
+`[split:]`/`[split]` indexing remains anywhere in the benchmark, and that the
+dual branch scores retention on `y_all[test_idx]`.
+
+Re-measured on the masks protocol after both fixes:
+
+| Arm | RT-avg_f1_{t>0} | RT-recall₀ |
+|---|---|---|
+| author TPNE-XGB (n=5) | 57.09 ± 2.33 | 27.50 ± 5.62 |
+| single view, embed (n=3) | 54.51 ± 4.32 | 78.13 ± 2.78 |
+| single view, raw (n=3) | 51.78 ± 1.29 | 84.11 ± 2.42 |
+| dual view (n=1) | 20.71 | 22.66 |
+
+The dual-view head is not competitive on this protocol and is not carried as a
+result. `compare_tpne.py` was checked in the same pass and is clean: its
+`split = int(0.6 * len(y))` is a genuine contiguous range.
+
+**Audit result: no remaining instances.** The only mask-derived indices in the
+non-vendored code are the two mask reads inside `author_split` itself, which are
+consumed as boolean arrays and returned as index arrays.
