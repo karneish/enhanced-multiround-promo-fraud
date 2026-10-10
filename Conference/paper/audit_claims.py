@@ -234,9 +234,10 @@ import content as C  # noqa: E402
 
 check("corresponding author", "KARNEISH S", C.CORRESPONDING["name"])
 check("email", "karneish.sk@gmail.com", C.CORRESPONDING["email"])
-check("phone", "+91 9962425526", C.CORRESPONDING["phone"])
-check("reference author retained",
-      True, any(a[0].startswith("Dr. R.G. Suresh Kumar") for a in C.AUTHORS))
+# The telephone number was removed at the author's request; it must not reappear.
+check("no telephone number in content", False, "phone" in C.CORRESPONDING)
+check("reference author retained, full caps",
+      "DR. R.G. SURESH KUMAR", C.AUTHORS[0][0])
 check("KARNEISH S present", True, any(a[0] == "KARNEISH S" for a in C.AUTHORS))
 check("KAVIN VENTHAN J present", True, any(a[0] == "KAVIN VENTHAN J" for a in C.AUTHORS))
 

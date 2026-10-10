@@ -23,11 +23,13 @@ Extracted from the reference PDF and encoded in `common.py`:
 ## Source layout
 
 ```
-content.py        the entire paper: title, authors, abstract, body blocks, tables, references
-common.py         inline-markup parser + the format constants above
-make_figures.py   generates the three IEEE-style figures
-build_pdf.py      renders content.py -> PDF (ReportLab)
-build_docx.py     renders content.py -> DOCX (python-docx)
+content.py            the entire paper: title, authors, abstract, body blocks, tables, references
+common.py             inline-markup parser + the format constants above
+make_figures.py       generates the three IEEE-style figures
+build_pdf.py          renders content.py -> PDF (ReportLab)
+build_docx.py         renders content.py -> DOCX (python-docx)
+audit_claims.py       checks every number in the paper against repository artefacts
+verify_references.py  checks the bibliography against Crossref
 ```
 
 Both builders read the same `content.py`, so the PDF and DOCX cannot drift apart.
@@ -40,7 +42,47 @@ uv pip install --python /tmp/papervenv/bin/python python-docx reportlab matplotl
 /tmp/papervenv/bin/python make_figures.py
 /tmp/papervenv/bin/python build_pdf.py
 /tmp/papervenv/bin/python build_docx.py
+/tmp/papervenv/bin/python audit_claims.py      # must report 0 failed
 ```
+
+## Verification status
+
+Run these before every submission; both exit non-zero on failure.
+
+**`audit_claims.py` — 56 checks, 56 pass.** Every quantitative claim is tied to a
+file in the repository. It caught three transcription errors in an earlier draft,
+which are now fixed:
+
+| Claim | Was | Corrected to | Source |
+|---|---|---|---|
+| author-parity on-round F1 | 0.120 | 0.119 | `reports/upgraded_authorparity.json` |
+| pre-trained per-round F1, round 3 | 0.430 | 0.429 | `reports/replay_pre60.json` |
+| round-0 F1 with pre-training off | 0.572 | 0.568 | `reports/replay_mod.json` |
+
+The reference-paper control was re-derived independently from
+`vendor/author-tpne/result/` using the authors' own `extract_metrics.py`:
+RT-f1_0 66.56 +/- 0.75, RT-avg_f1 57.09 +/- 2.33, RT-recall_0 27.50 +/- 5.62.
+The `tolokers bid` graph was loaded directly: 11,758 nodes, 1,049,758 edges,
+2,566 positives, 9,192 negatives (21.82%), feature dimension 10.
+
+**`verify_references.py` — 11 confirmed, 0 contradicted, 22 not machine-checkable.**
+Crossref confirms title, first author and year for 11 entries. The other 22 are
+NeurIPS / KDD / ICML / ICLR proceedings, books and a competition dataset, which
+Crossref either does not index or indexes only as a preprint; a miss there is
+**not** evidence that the citation is wrong.
+
+The four entries least worth trusting, and the reason:
+
+| # | Entry | Concern |
+|---|---|---|
+| 18 | van Breun & van der Gaast, ECML PKDD 2021 | volume/pages unconfirmed; check the proceedings |
+| 25 | Wang, Zhang & Li, *IEEE TCSS* 8(2):9-19, 2021 | title and page range unconfirmed |
+| 17 | He et al., LTAI workshop @ NeurIPS 2021 | workshop proceedings, unlikely to be indexed |
+| 22 | Moustafa & Slay, *IEEE Access* 9:158225-158241, 2021 | easily confused with the Alsaedi et al. 2020 TON_IoT paper, which is ref [21] |
+
+Everything else is standard, heavily cited work. **Still worth a pass through
+your own library before submission** — this was verified against Crossref, not
+against a publisher of record.
 
 ## Content notes
 

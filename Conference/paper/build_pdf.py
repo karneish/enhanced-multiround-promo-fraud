@@ -107,7 +107,7 @@ def title_block():
     c = C.CORRESPONDING
     f.append(Paragraph(f"<i>Corresponding author: {c['name']}</i>", S_CORR))
     f.append(Paragraph(
-        f"<i>Email: {c['email']}&nbsp;&nbsp;&nbsp;&nbsp;Tel: {c['phone']}</i>", S_CORR))
+        f"<i>Email: {c['email']}</i>", S_CORR))
     f.append(Spacer(1, 9))
 
     f.append(Paragraph(
@@ -217,7 +217,7 @@ class Paper(BaseDocTemplate):
                                  leftMargin=MARGIN_L, rightMargin=MARGIN_R,
                                  topMargin=MARGIN_T, bottomMargin=MARGIN_B,
                                  title=C.TITLE,
-                                 author="Dr. R.G. Suresh Kumar; KARNEISH S; KAVIN VENTHAN J",
+                                 author="DR. R.G. SURESH KUMAR; KARNEISH S; KAVIN VENTHAN J",
                                  subject="Multi-round adversarial promo fraud detection",
                                  **kw)
         def frame(x, w, h):

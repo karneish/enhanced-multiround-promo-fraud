@@ -1,18 +1,18 @@
 #!/usr/bin/env python
 """
-Verify every bibliography entry against OpenAlex.
+Verify every bibliography entry against Crossref.
 
-OpenAlex is used rather than Crossref because Crossref indexes little of the
-machine-learning venue literature (NeurIPS, KDD, ICML, ICLR, JMLR), and its
-fuzzy title search returns unrelated papers that merely share a word.
+Why Crossref and not a CS-specific index: this host is rate-limited (HTTP 429)
+by OpenAlex, and Crossref answers reliably. Crossref's coverage of the
+machine-learning *proceedings* (NeurIPS, KDD, ICML, ICLR) is poor, so an entry
+with no Crossref match is reported as NOT INDEXED rather than as an error -
+that is the expected outcome for a conference preprint, not evidence of a bad
+citation.
 
-Each entry is checked three ways:
-  * does a work with (essentially) our title exist?
-  * does its first author match the surname we printed?
-  * does its year match the year we printed?
-
-A mismatch is reported, never auto-corrected: a flagged entry needs a human to
-decide whether the paper or the citation is at fault.
+Matching is deliberately strict: a candidate must contain essentially all of
+our title tokens (forward containment) and must not be a much longer, different
+work (reverse containment). Crossref's fuzzy search otherwise returns unrelated
+papers that share a single word.
 
     python Conference/paper/verify_references.py
 """
@@ -29,25 +29,22 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import content as C  # noqa: E402
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-CACHE = os.path.join(HERE, ".openalex_cache.json")
+CACHE = os.path.join(HERE, ".crossref_cache.json")
 MAILTO = "paper-verify@example.org"
 
 STOP = {"the", "a", "an", "of", "for", "and", "in", "on", "with", "to", "from",
-        "based", "via", "using", "into", "over", "is", "are"}
+        "based", "via", "using", "into", "over", "is", "are", "toward", "towards"}
 
 
 # ------------------------------------------------------------------ helpers
 def load_cache():
     if os.path.exists(CACHE):
         try:
-            return json.load(open(CACHE))
+            c = json.load(open(CACHE))
+            return {k: v for k, v in c.items() if not isinstance(v, dict)}
         except Exception:
             return {}
     return {}
-
-
-def save_cache(c):
-    json.dump(c, open(CACHE, "w"), indent=1)
 
 
 def strip(s):
@@ -55,9 +52,8 @@ def strip(s):
 
 
 def ours_title(ref):
-    """Pull the quoted title out of an IEEE entry."""
-    q = ref.replace("<i>", "\u201c").replace("</i>", "\u201d")
-    m = re.search(r"\u201c(.+?)\u201d", q)
+    """Quoted title, falling back to the whole entry for books/datasets."""
+    m = re.search(r"“(.+?)”", ref)
     if m:
         return m.group(1).strip(" ,.")
     return strip(ref)[:160]
@@ -66,16 +62,14 @@ def ours_title(ref):
 def ours_surname(ref):
     """First author's surname, tolerating the 'F. Lastname' IEEE form."""
     r = strip(ref)
-    m = re.match(r"\s*(?:<[^>]+>\s*)*"
-                 r"(?:([A-Z]\.\s*(?:[A-Z]\.\s*)*)|([A-Z][\w\u00c0-\u00de'\u2019\-]+))"
-                 r"\s*(?:,|and\b)", r)
+    m = re.match(r"\s*(?:([A-Z]\.\s*(?:[A-Z]\.\s*)*)|"
+                 r"([A-Z][\wÀ-ÿ'’\-]+))\s*(?:,|and\b)", r)
     if not m:
         return ""
-    if m.group(1):                      # initials first: surname follows them
-        rest = r[m.end(1):].strip()
-        m2 = re.match(r"([A-Z][\w\u00c0-\u00de'\u2019\-]+)", rest)
+    if m.group(1):
+        m2 = re.match(r"([A-Z][\wÀ-ÿ'’\-]+)", r[m.end(1):].strip())
         return m2.group(1) if m2 else ""
-    return m.group(2)                     # surname first
+    return m.group(2)
 
 
 def ours_year(ref):
@@ -83,75 +77,56 @@ def ours_year(ref):
     return int(ys[-1]) if ys else None
 
 
-def venue_keys(ref):
-    """Venue tokens we printed, used to break ties between candidate records."""
-    r = strip(ref).lower()
-    keys = []
-    for pat, key in [
-        (r"sigkdd|knowledge discovery and data mining", "kdd"),
-        (r"neural information processing systems|neurips|nips", "neurips"),
-        (r"learning representations", "iclr"),
-        (r"int\. conf\. machine learning|icml", "icml"),
-        (r"advances in neural information", "neurips"),
-        (r"ieee access", "ieee access"),
-        (r"transactions on computational social systems", "tcss"),
-        (r"computer aided verification", "cav"),
-        (r"ieee transactions|ieee internet of things", "ieee trans"),
-        (r"journal of machine learning research", "jmlr"),
-        (r"statistics surveys", "statistics surveys"),
-        (r"pattern recognition letters", "prl"),
-        (r"communications surveys", "comst"),
-        (r"sigkdd explorations", "sigkdd expl"),
-    ]:
-        if re.search(pat, r):
-            keys.append(key)
-    return keys
-
-
-def venue_score(venue, want):
-    v = (venue or "").lower()
-    for w in want:
-        if w in v:
-            return 1.0
-    if "arxiv" in v:
-        return -0.5
-    return 0.0
-
-
 def toks(s):
-    t = strip(s).lower().replace("\u201c", " ").replace("\u201d", " ")
+    t = strip(s).lower().replace("“", " ").replace("”", " ")
     return {w for w in re.findall(r"[a-z0-9]{3,}", t) if w not in STOP}
 
 
 def sim(ours, theirs):
-    """Bidirectional token containment: catches both paraphrases and the case
-    where Crossref/OpenAlex returns a different paper sharing some words."""
     a, b = toks(ours), toks(theirs)
-    if not a:
+    if not a or not b:
         return 0.0, 0.0
-    inter = len(a & b)
-    return inter / len(a), inter / len(b)
+    n = len(a & b)
+    return n / len(a), n / len(b)
 
 
-# ------------------------------------------------------------------- search
-def search(title):
-    url = ("https://api.openalex.org/works?per_page=8&mailto=" + MAILTO
-           + "&search=" + urllib.parse.quote(title))
-    req = urllib.request.Request(url, headers={"User-Agent": "AMDL-TPNE-verify/1.0"})
-    with urllib.request.urlopen(req, timeout=40) as r:
-        return json.loads(r.read().decode()).get("results", [])
+def search(title, surname, attempts=4):
+    q = f"{surname} {title}" if surname else title
+    url = ("https://api.crossref.org/works?rows=12&mailto=" + MAILTO
+           + "&select=title,author,issued,container-title,volume,page,DOI,type"
+           + "&query.bibliographic=" + urllib.parse.quote(q))
+    delay = 3.0
+    last = None
+    for _ in range(attempts):
+        req = urllib.request.Request(url, headers={"User-Agent": "AMDL-TPNE-verify/1.0"})
+        try:
+            with urllib.request.urlopen(req, timeout=45) as r:
+                return json.loads(r.read().decode())["message"]["items"]
+        except Exception as e:                        # noqa: BLE001
+            last = e
+            time.sleep(delay)
+            delay *= 2
+    raise last if last else RuntimeError("search failed")
 
 
-def summarise(w):
-    au = w.get("authorships") or []
-    name = au[0]["author"]["display_name"] if au else ""
-    venue = ((w.get("primary_location") or {}).get("source") or {}).get("display_name") or ""
+def summarise(it):
+    au = it.get("author") or []
+    fam = au[0].get("family", "") if au else ""
+    given = au[0].get("given", "") if au else ""
+    ti = it.get("title") or [""]
+    ct = it.get("container-title") or [""]
+    yr = None
+    dp = (it.get("issued") or {}).get("date-parts") or [[None]]
+    if dp and dp[0]:
+        yr = dp[0][0]
     return {
-        "title": w.get("display_name") or "",
-        "year": w.get("publication_year"),
-        "author": name,
-        "venue": venue,
-        "doi": w.get("doi"),
+        "title": ti[0] if ti else "",
+        "surname": fam,
+        "given": given,
+        "year": yr,
+        "venue": ct[0] if ct else "",
+        "vol": it.get("volume"), "page": it.get("page"),
+        "doi": it.get("DOI"), "type": it.get("type"),
     }
 
 
@@ -162,79 +137,72 @@ def main():
 
     for i, ref in enumerate(C.REFERENCES, 1):
         t, sur, yr = ours_title(ref), ours_surname(ref), ours_year(ref)
+        key = f"{sur}|{t}"
 
-        if t not in cache:
+        if key in cache:
+            hits = cache[key]
+        else:
             try:
-                cache[t] = [summarise(w) for w in search(t)]
-            except Exception as e:
-                cache[t] = {"error": str(e)}
-            time.sleep(0.6)
-        hits = cache[t]
+                hits = [summarise(h) for h in search(t, sur)]
+                cache[key] = hits
+                json.dump(cache, open(CACHE, "w"), indent=1)
+            except Exception as e:                    # noqa: BLE001
+                rows.append((i, ref, t, "ERROR", str(e), {}, sur, yr))
+                continue
+            time.sleep(0.5)
 
-        if isinstance(hits, dict):
-            rows.append((i, ref, t, "ERROR", hits.get("error", "?"), {}, sur, yr))
-            continue
-        if not hits:
-            rows.append((i, ref, t, "NOT FOUND", "", {}, sur, yr))
-            continue
-
-        # Prefer a record whose venue matches the one we cited: OpenAlex often
-        # returns an arXiv preprint of a conference paper, which carries the
-        # preprint year rather than the publication year.
-        want_venue = venue_keys(ref)
         cands = []
         for h in hits:
-            ff, bb = sim(t, h["title"])
-            cands.append((ff, bb, venue_score(h.get("venue") or "", want_venue), h))
-        # Title match dominates; venue only breaks ties between equally-titled
-        # records (typically a conference paper versus its arXiv preprint).
-        cands.sort(key=lambda c: (round(c[0], 2) >= 0.90, c[0], c[2]), reverse=True)
-        f, b, _v, best = cands[0] if cands else (0.0, 0.0, 0.0, {})
+            f, b = sim(t, h["title"])
+            cands.append((f, b, h))
+        cands.sort(key=lambda c: c[0], reverse=True)
 
-        exact = f >= 0.90 and b >= 0.55
-        near = f >= 0.70
-        status, note = "OK", ""
+        strict = [c for c in cands if c[0] >= 0.90 and c[1] >= 0.50]
+        status, note, best = "NOT INDEXED", "", {}
 
-        if not near:
-            status = "NOT FOUND"
-            note = "no work in OpenAlex matches this title"
-        else:
-            got_sur = (best["author"] or "").split()[-1] if best["author"] else ""
-            if not exact:
-                status = "PARTIAL"
-                note = f"closest title only {f:.0%} similar"
-            if got_sur and sur and got_sur.lower().replace("\u00df", "ss") != sur.lower().replace("\u00df", "ss"):
-                status = "AUTHOR MISMATCH" if status == "OK" else status
-                note = (note + "; " if note else "") + \
-                    f"first author is '{got_sur}', we printed '{sur}'"
-            if best["year"] and yr and best["year"] != yr:
+        if strict:
+            f, b, best = strict[0]
+            notes = []
+            if sur and best["surname"] and best["surname"].lower() != sur.lower():
+                status = "AUTHOR MISMATCH"
+                notes.append(f"first author is '{best['surname']}', we printed '{sur}'")
+            if yr and best["year"] and best["year"] != yr:
                 status = "YEAR MISMATCH" if status == "OK" else status
-                note = (note + "; " if note else "") + \
-                    f"OpenAlex year {best['year']}, we printed {yr}"
-        rows.append((i, ref, t, status, note, best or {}, sur, yr))
+                notes.append(f"Crossref year {best['year']}, we printed {yr}")
+            status = status if status != "NOT INDEXED" else "OK"
+            note = "; ".join(notes)
+        elif cands and cands[0][0] >= 0.70:
+            f, b, best = cands[0]
+            status = "PARTIAL"
+            note = f"best title match only {f:.0%} / reverse {b:.0%}"
+        elif cands:
+            f, b, best = cands[0]
+            status = "NOT INDEXED"
+            note = f"no close match (best {f:.0%}); likely a venue Crossref does not index"
 
-    save_cache(cache)
+        rows.append((i, ref, t, status, note, best, sur, yr))
 
-    marks = {"OK": "  ok  ", "PARTIAL": "part  ", "NOT FOUND": "NONE  ",
+    marks = {"OK": "  ok  ", "PARTIAL": "part  ", "NOT INDEXED": "nidx ",
              "AUTHOR MISMATCH": "AUTH! ", "YEAR MISMATCH": "YEAR! ", "ERROR": " ERR  "}
     counts = {}
     print("=" * 100)
-    print("OpenAlex verification of the AMDL-TPNE bibliography")
+    print("Crossref verification of the AMDL-TPNE bibliography")
     print("=" * 100)
     for i, ref, t, st, note, hit, sur, yr in rows:
         counts[st] = counts.get(st, 0) + 1
-        print(f"[{i:2d}] {marks.get(st,'????  ')} {t[:74]}")
+        print(f"[{i:2d}] {marks.get(st,'???? ')} {t[:72]}")
         if st != "OK":
-            print(f"           note : {note}")
-            print(f"           hit  : {hit.get('title','')[:74]}")
-            print(f"                  {hit.get('author','')} | {hit.get('year')} | "
-                  f"{hit.get('venue','')[:46]} | {hit.get('doi')}")
+            print(f"          {note}")
+            if hit:
+                print(f"          hit: {hit.get('title','')[:70]} | "
+                      f"{hit.get('surname','')} | {hit.get('year')} | "
+                      f"{hit.get('venue','')[:40]} | {hit.get('doi')}")
     print("-" * 100)
     print("  ".join(f"{k}={v}" for k, v in sorted(counts.items())))
     bad = sum(v for k, v in counts.items() if k in ("AUTHOR MISMATCH", "YEAR MISMATCH", "ERROR"))
-    unver = counts.get("NOT FOUND", 0) + counts.get("PARTIAL", 0)
     print(f"\nconfirmed {counts.get('OK', 0)} | contradicted {bad} | "
-          f"needs manual check {unver} | total {len(C.REFERENCES)}")
+          f"needs manual check {counts.get('PARTIAL', 0) + counts.get('NOT INDEXED', 0)} | "
+          f"total {len(C.REFERENCES)}")
     return 1 if bad else 0
 
 

@@ -113,7 +113,7 @@ def tune_threshold(head, X, y, grid=None):
 
 
 def run(arm, rounds, seed, pretrain_epochs, pretrain_epochs_round,
-        trials, buffer_max, h_feats, round_window):
+        trials, buffer_max, h_feats, round_window, features="embed"):
     graph = load_tolokers()
     npos = int((graph["label"] == 1).sum())
     nneg = int((graph["label"] == 0).sum())
@@ -129,6 +129,7 @@ def run(arm, rounds, seed, pretrain_epochs, pretrain_epochs_round,
     # pre-training epochs. The base paper uses 500 estimators
     # (model_config['n_estimator']); the ensemble defaults to 200 rounds.
     base["xgb_rounds"] = int(os.environ.get("XGB_ROUNDS", 200))
+    base["scale_pos_weight"] = float(os.environ.get("SCALE_POS_WEIGHT", 1.0))
     base["xgb_extra_rounds"] = 50
 
     scenario_cfg = {"adver_choose": "greedy", "adver_mod": "replay",
@@ -156,6 +157,18 @@ def run(arm, rounds, seed, pretrain_epochs, pretrain_epochs_round,
 
         # round 0: the real labelled graph, split into support / holdout
         evs = list(scenario.stream_events())
+        RAW = np.asarray(scenario.features, dtype=np.float64)
+
+        def feats_for(node_ids, E):
+            """Assemble the model input according to --features."""
+            raw = np.asarray(scenario.features, dtype=np.float64)[
+                np.asarray(node_ids)]
+            if features == "raw":
+                return raw
+            emb_part = E[np.asarray(node_ids)]
+            if features == "embed":
+                return emb_part
+            return np.hstack([emb_part, raw])
         y_all = np.array([int(e["label"]) if e["label"] is not None else 0
                           for e in evs])
         # the author's ratio_test is 0.20, so 80% is available for training;
@@ -168,7 +181,7 @@ def run(arm, rounds, seed, pretrain_epochs, pretrain_epochs_round,
         n_val = int(0.20 * n)
         split = n - n_test - n_val          # train end
         val_slice = slice(split, split + n_val)
-        X0 = E0[:len(evs)]
+        X0 = feats_for(np.arange(len(evs)), E0)
         head.fit(X0[:split], y_all[:split])
         # ---- threshold selection on the validation split only
         thr = 0.5 if os.environ.get("NO_TUNE") else tune_threshold(
@@ -195,7 +208,7 @@ def run(arm, rounds, seed, pretrain_epochs, pretrain_epochs_round,
             E, _ = emb.embed(scenario.graph_dict())
             yr = np.array([int(e["label"]) if e["label"] is not None else 0
                            for e in ev_r])
-            Xr = E[np.array([int(e["raw"]["node_id"]) for e in ev_r])]
+            Xr = feats_for([int(e["raw"]["node_id"]) for e in ev_r], E)
             pq = head.predict(Xr, thr)
             ret = head.predict(X0[split:], thr)
             per_round.append({
@@ -212,7 +225,7 @@ def run(arm, rounds, seed, pretrain_epochs, pretrain_epochs_round,
             if ev_s:
                 ys = np.array([int(e["label"]) if e["label"] is not None else 0
                                for e in ev_s])
-                Xs = E[np.array([int(e["raw"]["node_id"]) for e in ev_s])]
+                Xs = feats_for([int(e["raw"]["node_id"]) for e in ev_s], E)
                 head.fit(Xs, ys)
             # the round-0 holdout is deliberately NOT added: it is the
             # retention measurement, so training on it would fake the gap.
@@ -246,9 +259,26 @@ def main():
     ap.add_argument("--no-tune-threshold", action="store_true",
                     help="use the default 0.5 threshold instead of tuning "
                          "it on the validation split")
+    ap.add_argument("--features", default="embed",
+                    choices=["embed", "raw", "both"],
+                    help="embed = TPNE embedding only (paper parity); "
+                         "raw = node features only; both = concatenated")
+    ap.add_argument("--class-weight", default="balanced",
+                    help="'balanced' | 'none' | numeric weight for the "
+                         "ensemble members (trades recall for precision)")
     ap.add_argument("--out", default=None)
     a = ap.parse_args()
 
+    if a.class_weight not in ("balanced",):
+        if a.class_weight.lower() in ("none", "off"):
+            DEFAULT_CONFIG["class_weight"] = None
+        else:
+            cw = float(a.class_weight)
+            # HistGradientBoosting only accepts 'balanced'/None/dict, so a
+            # numeric weight is expressed as a per-class dict; ExtraTrees
+            # accepts the number directly.
+            DEFAULT_CONFIG["class_weight"] = {0: 1.0, 1: cw}
+            DEFAULT_CONFIG["class_weight_numeric"] = cw
     if a.scale_pos_weight:
         DEFAULT_CONFIG.setdefault("scale_pos_weight",
                                   a.scale_pos_weight)
@@ -259,7 +289,7 @@ def main():
         os.environ["NO_TUNE"] = "1"
     recs = run(a.arm, a.rounds, a.seed, a.pretrain_epochs,
                a.pretrain_epochs_round, a.trials, a.buffer_max,
-               a.h_feats, a.round_window)
+               a.h_feats, a.round_window, a.features)
     summary = rt_metrics(recs)
     # Strict parity with the base paper: its `round_num = 3` run emits query
     # rows for rounds 1 and 2 only, so RT-avg_f1_t>0 is a mean over exactly

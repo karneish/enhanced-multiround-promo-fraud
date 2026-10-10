@@ -16,7 +16,7 @@ TITLE = "AMDL-TPNE: An Adaptive Multi-Model Detection Layer for Multi-Round Adve
 
 AUTHORS = [
     # (name, affiliation-marker, is-corresponding)
-    ("Dr. R.G. Suresh Kumar", "1", False),
+    ("DR. R.G. SURESH KUMAR", "1", False),
     ("KARNEISH S", "1", True),
     ("KAVIN VENTHAN J", "1", False),
 ]
@@ -30,7 +30,6 @@ AFFILIATIONS = [
 CORRESPONDING = {
     "name": "KARNEISH S",
     "email": "karneish.sk@gmail.com",
-    "phone": "+91 9962425526",
 }
 
 ABSTRACT = (

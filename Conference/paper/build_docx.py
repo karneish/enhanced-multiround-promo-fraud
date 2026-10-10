@@ -187,8 +187,7 @@ def build_title_block(doc):
     p = para(doc, space_before=4, space_after=1, align=WD_ALIGN_PARAGRAPH.CENTER, line=10.5)
     add_runs(p, f"Corresponding author: {C.CORRESPONDING['name']}", CORR_SIZE, italic=True)
     p = para(doc, space_after=10, align=WD_ALIGN_PARAGRAPH.CENTER, line=10.5)
-    add_runs(p, f"Email: {C.CORRESPONDING['email']}"
-                f"&nbsp;&nbsp;&nbsp;Tel: {C.CORRESPONDING['phone']}", CORR_SIZE, italic=True)
+    add_runs(p, f"Email: {C.CORRESPONDING['email']}", CORR_SIZE, italic=True)
 
     # Abstract
     p = para(doc, space_after=4, align=WD_ALIGN_PARAGRAPH.JUSTIFY,

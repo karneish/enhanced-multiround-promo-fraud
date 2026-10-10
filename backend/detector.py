@@ -88,6 +88,34 @@ def _f1_precision_recall(y_true, y_pred):
             "f1": round(f1, 4)}
 
 
+
+def _class_weight(cfg):
+    """Resolve the ensemble members' `class_weight`.
+
+    ``"balanced"`` (the historical default) maximises recall at the cost of
+    precision. A numeric weight below 1 trades some recall for precision, which
+    is usually the better trade for F1 on a rare-class problem. Set
+    ``class_weight: null`` in the config to disable re-weighting entirely.
+    """
+    w = cfg.get("class_weight", "balanced")
+    if w is None or (isinstance(w, str) and w.lower() in ("none", "off")):
+        return None
+    return w
+
+
+def _class_weight_numeric(cfg):
+    """Numeric form for estimators that reject a per-class dict."""
+    w = cfg.get("class_weight", "balanced")
+    n = cfg.get("class_weight_numeric")
+    if n is not None:
+        return float(n)
+    if isinstance(w, dict):
+        return float(w.get(1, 1.0))
+    if w is None or (isinstance(w, str) and w.lower() in ("none", "off")):
+        return None
+    return w
+
+
 class ThreeModelEnsemble:
     def __init__(self, source, columns, config):
         self.source = source
@@ -371,8 +399,17 @@ class ThreeModelEnsemble:
             "eval_metric": "logloss",
             "seed": self._seed,
         }
-        params["scale_pos_weight"] = max(1.0, float((y == 0).sum())
-                                         / max(1.0, float((y == 1).sum())))
+        # `scale_pos_weight` defaults to the automatic neg/pos ratio, which on
+        # a ~20%-prevalence problem drives recall above 90% at the cost of
+        # precision. Setting `scale_pos_weight` in the config pins it (values
+        # below 1 trade recall for precision); `scale_pos_weight: null`
+        # disables re-weighting.
+        spw = self.cfg.get("scale_pos_weight", None)
+        if spw is None:
+            params["scale_pos_weight"] = max(1.0, float((y == 0).sum())
+                                             / max(1.0, float((y == 1).sum())))
+        else:
+            params["scale_pos_weight"] = float(spw)
 
         dtrain = xgb.DMatrix(X, label=y)
         rounds = (int(self.cfg.get("xgb_rounds", 200)) if base is None
@@ -391,7 +428,11 @@ class ThreeModelEnsemble:
             max_iter=max_iter,
             learning_rate=0.1,
             max_depth=6,
-            class_weight="balanced",
+            # "balanced" up-weights the minority class so aggressively that
+            # recall exceeds 90% while precision collapses, which caps F1 on a
+            # ~20%-prevalence problem. Configurable so the operating point can
+            # be set on a validation split rather than fixed by assumption.
+            class_weight=_class_weight(self.cfg),
             warm_start=True,
             random_state=self._seed,
         )
@@ -404,7 +445,7 @@ class ThreeModelEnsemble:
         model = ExtraTreesClassifier(
             n_estimators=int(self.cfg.get("et_n_estimators", 200)),
             min_samples_split=5,
-            class_weight="balanced",
+            class_weight=_class_weight_numeric(self.cfg),
             random_state=self._seed,
             n_jobs=-1,
         )
