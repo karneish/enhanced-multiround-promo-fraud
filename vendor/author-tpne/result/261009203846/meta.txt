@@ -1,0 +1,20 @@
+CPU smoke test - validate pipeline end to end
+
+MAIN CONFIG
+{'verbose': 4, 'device': 'cpu', 'save_df': True, 'save_embedding': False, 'save_temp_sne': False, 'exp_type': 'ADVER', 'task_type': 'NODE', 'setting_type': 'INDUCTIVE', 'full_oracle': False, 'round_num': 10, 'node_expiration_time': 1, 'round_new_pos': 20, 'round_new_neg': 400, 'round_budget_pos': 10, 'round_budget_neg': 200}
+
+TRAIN CONFIG
+{'verbose': 4, 'random_state': 7777777, 'round_reset_model': False, 'round_train_list': [], 'num_epoch': 500, 'num_round_epoch': 300, 'early_stopping': 75, 'stuck_stopping': 50, 'stuck_threshold': 0, 'train_max_retry': 10, 'ratio_initial': 0.5, 'ratio_train': 0.6, 'ratio_val': 0.2, 'ratio_test': 0.2, 'optimizer': <class 'torch.optim.adam.Adam'>, 'learning_rate': 0.01, 'loss': <function cross_entropy at 0x726780285120>, 'loss_gamma': 5}
+
+MODEL CONFIG
+{'verbose': 4, 'model_name': 'XGB', 'embed_type': 'temporal', 'h_feats': 64, 'num_layers': 2, 'mlp_feats': 64, 'mlp_layers': 2, 'att_heads': 2, 'dropout_rate': 0.1, 'act_name': 'LeakyReLU', 'norm_name': 'layer', 'boost_agg_backbone': <class 'models.benchmarks_supervised.booster.GIN_noparam'>, 'boost_predictor': <class 'xgboost.sklearn.XGBClassifier'>, 'boost_metric': <function average_precision_score at 0x72676b9dd300>, 'n_estimator': 500, 'round_window': 7, 'temporal_agg': 'mean_final', 'tloss_type': 'normal', 'alpha': 1, 'beta': 1, 'gamma': 1, 'lambda_': 1, 'lambda1': 1, 'lambda2': 1, 'k': 1, 'training_type': 'round', 'loss_type': 'ndist', 'loss_sample': True, 'loss_sample_ratio': 0.1, 'drop_rate': 0, 'addon_name': 'NONE', 'addon_perc': 0.05, 'addon_round_window': 7, 'addon_internal_agg': 'OR'}
+
+STRAT CONFIG
+{'verbose': 4, 'augment_name': 'REAGE', 'augment_pos_ratio': 0.5, 'augment_neg_ratio': 0.5, 'augment_round_split': 4, 'augment_prob': 0.5, 'pseudo_name': 'NONE', 'pseudo_skip_initial': False, 'pseudo_new_pos_only': False}
+
+ADVER CONFIG
+{'verbose': 4, 'adver_choose_name': 'GREEDY', 'adver_mod_name': 'REPLAY', 'adver_feat_coef': 1, 'adver_conn_coef': 0.1}
+
+EXP DICT
+{'exp_type': ['ADVER'], 'round_num': [2], 'model_name': ['XGB-SP'], 'round_reset_model': [False], 'embed_type': ['temporal'], 'h_feats': [32], 'num_layers': [2], 'round_window': [3], 'num_epoch': [30], 'num_round_epoch': [20], 'early_stopping': [15], 'loss_type': ['ndist'], 'norm_name': ['layer'], 'temporal_agg': ['mean_final'], 'alpha': [1], 'beta': [1], 'augment_name': ['REAGE']}
+

@@ -51,6 +51,63 @@ def _metrics(y, pred):
             float(recall_score(y, pred, zero_division=0)))
 
 
+def _full_metrics(y, pred, score=None):
+    """F1, recall, precision and ROC-AUC for one round.
+
+    The harness used to record only F1 and recall. That made the high recall
+    unfalsifiable: recall is bought by lowering the decision threshold, so a
+    recall-only report cannot be compared against the reference, which reports
+    final_precision and final_auc alongside recall.
+    """
+    from sklearn.metrics import (f1_score, recall_score, precision_score,
+                                 roc_auc_score)
+    import numpy as np
+    out = {
+        "f1": float(f1_score(y, pred, zero_division=0)),
+        "recall": float(recall_score(y, pred, zero_division=0)),
+        "precision": float(precision_score(y, pred, zero_division=0)),
+        "auc": None,
+    }
+    if score is not None:
+        try:
+            s = np.asarray(score, dtype=float).ravel()
+            if len(np.unique(s)) > 2 and len(np.unique(y)) > 1:
+                out["auc"] = float(roc_auc_score(y, s))
+        except (ValueError, TypeError):
+            pass
+    return out
+
+
+def _recall_at_precision(y, score, min_precision):
+    """Recall attainable while holding precision >= min_precision.
+
+    Sweeps every achievable threshold and returns the best recall that still
+    satisfies the precision floor. This is the threshold-independent way to ask
+    "is the detector actually better?", and it is what makes a recall figure
+    safe to compare with another paper's.
+    """
+    import numpy as np
+    y = np.asarray(y)
+    score = np.asarray(score, dtype=float)
+    if len(np.unique(y)) < 2 or len(y) == 0:
+        return None
+    order = np.argsort(-score)
+    ys = y[order]
+    ss = score[order]
+    tp = np.cumsum(ys == 1)
+    fp = np.cumsum(ys == 0)
+    # only evaluate at the end of each run of equal scores
+    last = np.r_[ss[1:] != ss[:-1], True]
+    tp, fp, ss = tp[last], fp[last], ss[last]
+    with np.errstate(divide="ignore", invalid="ignore"):
+        prec = tp / np.maximum(tp + fp, 1)
+        rec = tp / max(int((y == 1).sum()), 1)
+    ok = prec >= min_precision
+    if not ok.any():
+        return 0.0
+    return float(rec[ok].max())
+
+
 class Head:
     """Classifier on top of the embedding: single XGBoost, or the ensemble."""
 
@@ -170,7 +227,7 @@ def tune_threshold_dual(head, Xr, Xe, y, rw):
 
 
 def _dual_rounds(scenario, emb, head, kind, E0, X0_raw, X0_emb, y_all,
-                 test_idx, rounds, rw, pt_epochs, incremental, embedder):
+                 test_idx, rounds, rw, pt_epochs, incremental, embedder, patience=None):
     """Score query rounds and the round-0 retention set.
 
     ``test_idx`` is an index array, never a slice endpoint. Treating it as one
@@ -186,20 +243,27 @@ def _dual_rounds(scenario, emb, head, kind, E0, X0_raw, X0_emb, y_all,
         ev_q = list(scenario.stream_events(start_round=r, which="query"))
         if not ev_q:
             continue
-        if incremental and pt_epochs and embedder != "author":
+        if incremental and pt_epochs:
             emb.pretrain(scenario.graph_dict(), epochs=pt_epochs,
-                         lr=0.01, warm=True)
+                         lr=0.01, warm=True, patience=patience)
         E, _ = emb.embed(scenario.graph_dict())
         ids_q = [int(e["raw"]["node_id"]) for e in ev_q]
         yq = np.array([int(e["label"]) if e["label"] is not None else 0
                        for e in ev_q])
         RAW = np.asarray(scenario.features, dtype=np.float64)
         pq = head.predict(RAW[ids_q], E[ids_q], None, rw)
+        ps = head.predict_proba(RAW[ids_q], E[ids_q], rw)
         ret = head.predict(X0_raw[test_idx], X0_emb[test_idx],
                            head.threshold, rw)
+        pq_bool = pq.astype(bool)
+        qm = _full_metrics(yq, pq_bool, ps)
         per_round.append({
-            "round": r, "f1_query": _metrics(yq, pq)[0],
-            "recall_query": _metrics(yq, pq)[1],
+            "round": r, "f1_query": qm["f1"],
+            "recall_query": qm["recall"],
+            "precision_query": qm["precision"],
+            "auc_query": qm["auc"],
+            "recall_at_p30": _recall_at_precision(yq, ps, 0.30),
+            "recall_at_p50": _recall_at_precision(yq, ps, 0.50),
             "f1_round0_nodes": _metrics(y_all[test_idx], ret)[0],
             "n_query": int(len(yq))})
         ev_s = list(scenario.stream_events(start_round=r, which="support"))
@@ -253,7 +317,7 @@ def author_split(graph, seed=0, trial_col=0):
 
 
 def _switch_rounds(scenario, emb, head, kind, X0_raw, X0_emb, y_all,
-                   test_idx, rounds, thr_r, pt_epochs, incremental, embedder):
+                   test_idx, rounds, thr_r, pt_epochs, incremental, embedder, patience=None):
     """Query rounds scored with the RAW head; retention with the embedding head.
 
     The ablation shows the raw view wins on query detection (53.06 vs 38.45)
@@ -270,20 +334,27 @@ def _switch_rounds(scenario, emb, head, kind, X0_raw, X0_emb, y_all,
         ev_q = list(scenario.stream_events(start_round=r, which="query"))
         if not ev_q:
             continue
-        if incremental and pt_epochs and embedder != "author":
+        if incremental and pt_epochs:
             emb.pretrain(scenario.graph_dict(), epochs=pt_epochs,
-                         lr=0.01, warm=True)
+                         lr=0.01, warm=True, patience=patience)
         E, _ = emb.embed(scenario.graph_dict())
         RAW = np.asarray(scenario.features, dtype=np.float64)
         ids_q = [int(e["raw"]["node_id"]) for e in ev_q]
         yq = np.array([int(e["label"]) if e["label"] is not None else 0
                        for e in ev_q])
         pq = head.h_raw.predict(RAW[ids_q], thr_r)          # raw head scores query
+        ps = head.h_raw.predict_proba(RAW[ids_q])
         ret = head.h_emb.predict(X0_emb[test_idx],           # embedding head
                                  head.threshold)            # scores retention
+        pq_bool = pq.astype(bool)
+        qm = _full_metrics(yq, pq_bool, ps)
         per_round.append({
-            "round": r, "f1_query": _metrics(yq, pq)[0],
-            "recall_query": _metrics(yq, pq)[1],
+            "round": r, "f1_query": qm["f1"],
+            "recall_query": qm["recall"],
+            "precision_query": qm["precision"],
+            "auc_query": qm["auc"],
+            "recall_at_p30": _recall_at_precision(yq, ps, 0.30),
+            "recall_at_p50": _recall_at_precision(yq, ps, 0.50),
             "f1_round0_nodes": _metrics(y_all[test_idx], ret)[0],
             "n_query": int(len(yq))})
         ev_s = list(scenario.stream_events(start_round=r, which="support"))
@@ -299,7 +370,7 @@ def _switch_rounds(scenario, emb, head, kind, X0_raw, X0_emb, y_all,
 def run(arm, rounds, seed, pretrain_epochs, pretrain_epochs_round,
         trials, buffer_max, h_feats, round_window, features="embed",
         embedder="ours", dual=False, raw_weight=0.5, split_mode="holdout",
-        view_switch=False):
+        view_switch=False, patience=None, alpha=None, beta=None):
     graph = load_tolokers()
     npos = int((graph["label"] == 1).sum())
     nneg = int((graph["label"] == 0).sum())
@@ -333,10 +404,14 @@ def run(arm, rounds, seed, pretrain_epochs, pretrain_epochs_round,
         if embedder == "author":
             from backend.embedder import AuthorTemporalEmbedder
             emb = AuthorTemporalEmbedder(h_feats=h_feats, num_layers=2,
-                                         round_window=round_window)
+                                         round_window=round_window,
+                                         alpha=alpha if alpha is not None else 1.0,
+                                         beta=beta if beta is not None else 1.0)
         else:
             emb = TPNEEmbedder(h_feats=h_feats, num_layers=2,
                                round_window=round_window,
+                               alpha=alpha if alpha is not None else 1.0,
+                               beta=beta if beta is not None else 1.0,
                                mode="incremental" if incremental else "offline",
                                seed=s)
         emb_cols = emb.columns()
@@ -345,8 +420,20 @@ def run(arm, rounds, seed, pretrain_epochs, pretrain_epochs_round,
         rw = raw_weight
 
         t0 = time.time()
-        if pretrain_epochs and embedder != "author":
-            emb.pretrain(scenario.graph_dict(), epochs=pretrain_epochs, lr=0.01)
+        # NOTE: this used to be guarded by `embedder != "author"`, which meant
+        # that selecting the vendored reference encoder silently ran it
+        # *untrained*. That guard predated AuthorTemporalEmbedder.pretrain(),
+        # which is now implemented and is the exact analogue of the reference's
+        # supervised_multi.py loop (up to 500 epochs per round). Selecting the
+        # author's encoder and expecting their quality was therefore
+        # impossible. Pre-training is now attempted for whichever embedder is
+        # selected, and falls back safely if it does not support it.
+        if pretrain_epochs:
+            try:
+                emb.pretrain(scenario.graph_dict(), epochs=pretrain_epochs,
+                             lr=0.01, patience=patience)
+            except (NotImplementedError, AttributeError, TypeError) as e:
+                print(f"  [warn] pre-training unavailable for this embedder: {e}")
         E0, _ = emb.embed(scenario.graph_dict())
 
         # round 0: the real labelled graph, split into support / holdout
@@ -404,7 +491,7 @@ def run(arm, rounds, seed, pretrain_epochs, pretrain_epochs_round,
             per_round = _switch_rounds(
                 scenario, emb, head, kind, X0_raw, X0_emb, y_all,
                 test_idx, rounds, thr_r, pretrain_epochs_round,
-                incremental, embedder)
+                incremental, embedder, patience)
             out.append({"round0": rec0, "rounds": per_round,
                         "seconds": 0.0, "embed_summary": emb.summary()})
             m = rt_metrics([out[-1]])
@@ -454,19 +541,27 @@ def run(arm, rounds, seed, pretrain_epochs, pretrain_epochs_round,
             ev_r = list(scenario.stream_events(start_round=r, which="query"))
             if not ev_r:
                 continue
-            if incremental and pretrain_epochs_round and embedder != "author":
+            if incremental and pretrain_epochs_round:
                 emb.pretrain(scenario.graph_dict(),
-                             epochs=pretrain_epochs_round, lr=0.01, warm=True)
+                             epochs=pretrain_epochs_round, lr=0.01, warm=True,
+                             patience=patience)
             E, _ = emb.embed(scenario.graph_dict())
             yr = np.array([int(e["label"]) if e["label"] is not None else 0
                            for e in ev_r])
             Xr = feats_for([int(e["raw"]["node_id"]) for e in ev_r], E)
             pq = head.predict(Xr, thr)
+            ps = head.predict_proba(Xr)
             ret = head.predict(X0[test_idx], thr)
+            pq_bool = pq.astype(bool)
+            qm = _full_metrics(yr, pq_bool, ps)
             per_round.append({
                 "round": r,
-                "f1_query": _metrics(yr, pq)[0],
-                "recall_query": _metrics(yr, pq)[1],
+                "f1_query": qm["f1"],
+                "recall_query": qm["recall"],
+                "precision_query": qm["precision"],
+                "auc_query": qm["auc"],
+                "recall_at_p30": _recall_at_precision(yr, ps, 0.30),
+                "recall_at_p50": _recall_at_precision(yr, ps, 0.50),
                 "f1_round0_nodes": _metrics(y_all[test_idx], ret)[0],
                 "n_query": int(len(yr)),
             })
@@ -500,8 +595,25 @@ def main():
                     choices=["author-parity", "ensemble", "ensemble+incremental"])
     ap.add_argument("--rounds", type=int, default=3)
     ap.add_argument("--seed", type=int, default=42)
-    ap.add_argument("--pretrain-epochs", type=int, default=60)
-    ap.add_argument("--pretrain-epochs-round", type=int, default=20)
+    ap.add_argument("--pretrain-epochs", type=int, default=60,
+                    help="encoder pre-training epochs for round 0 "
+                         "(reference uses 500)")
+    ap.add_argument("--pretrain-epochs-round", type=int, default=20,
+                    help="encoder pre-training epochs for each later round "
+                         "(reference uses 300)")
+    ap.add_argument("--patience", type=int, default=0,
+                    help="early stopping on the pre-training loss; the "
+                         "reference uses 75. 0 disables it.")
+    ap.add_argument("--alpha", type=float, default=None,
+                    help="weight on the temporal-disentanglement loss "
+                         "(reference uses 1.0)")
+    ap.add_argument("--beta", type=float, default=None,
+                    help="weight on the temporal-maximisation loss "
+                         "(reference uses 1.0)")
+    ap.add_argument("--reference-schedule", action="store_true",
+                    help="shorthand for the paper's own schedule: "
+                         "500/300 epochs, patience 75, 10 rounds, 10 trials, "
+                         "alpha=beta=1")
     ap.add_argument("--trials", type=int, default=1)
     ap.add_argument("--buffer-max", type=int, default=60000)
     ap.add_argument("--h-feats", type=int, default=64)
@@ -554,11 +666,21 @@ def main():
           f"buffer={a.buffer_max} h={a.h_feats} W={a.round_window}", flush=True)
     if a.no_tune_threshold:
         os.environ["NO_TUNE"] = "1"
-    recs = run(a.arm, a.rounds, a.seed, a.pretrain_epochs,
-               a.pretrain_epochs_round, a.trials, a.buffer_max,
+    patience = a.patience or None
+    pe, per = a.pretrain_epochs, a.pretrain_epochs_round
+    rounds, trials = a.rounds, a.trials
+    if a.reference_schedule:
+        pe, per = 500, 300
+        patience = patience or 75
+        rounds, trials = 10, 10
+        print("  reference schedule: 500/300 epochs, patience 75, "
+              "10 rounds x 10 trials, alpha=beta=1", flush=True)
+    recs = run(a.arm, rounds, a.seed, pe,
+               per, trials, a.buffer_max,
                a.h_feats, a.round_window, a.features, a.embedder,
                split_mode=a.split, view_switch=a.view_switch,
-               dual=a.dual_view, raw_weight=a.raw_weight)
+               dual=a.dual_view, raw_weight=a.raw_weight,
+               patience=patience, alpha=a.alpha, beta=a.beta)
     summary = rt_metrics(recs)
     # Strict parity with the base paper: its `round_num = 3` run emits query
     # rows for rounds 1 and 2 only, so RT-avg_f1_t>0 is a mean over exactly
@@ -569,7 +691,7 @@ def main():
     if strict:
         summary["RT-avg_f1_strict_parity"] = _st.mean(strict) / 100.0
         summary["strict_per_trial"] = [round(x, 2) for x in strict]
-    summary.update(arm=a.arm, trials=a.trials, pretrain_epochs=a.pretrain_epochs,
+    summary.update(arm=a.arm, trials=trials, pretrain_epochs=pe,
                    buffer_max=a.buffer_max, per_trial=recs)
     out = a.out or f"reports/upgraded_{a.arm.replace('+','_')}.json"
     os.makedirs(Path(out).parent, exist_ok=True)

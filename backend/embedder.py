@@ -196,7 +196,8 @@ class AuthorTemporalEmbedder:
         self.refit_count += 1
         return h.cpu().numpy().astype(np.float64), dict(self.last_loss)
 
-    def pretrain(self, graph, epochs=30, lr=0.01, history=None, warm=False):
+    def pretrain(self, graph, epochs=30, lr=0.01, history=None, warm=False,
+                 patience=None):
         """Train the reference embedder with Adam on the paper's three losses.
 
         The reference implementation returns ``(h_final, loss)`` from
@@ -206,6 +207,11 @@ class AuthorTemporalEmbedder:
         author's ``src/experiment/supervised_multi.py`` does over up to 500
         epochs per round; without it the encoder is random and worse than the
         raw node features.
+
+        ``patience`` mirrors the reference's early stopping
+        (``early_stopping = 75`` in ``config_author_control.json``): stop when
+        the validation loss has not improved for that many epochs, and restore
+        the best weights seen. ``None`` disables it.
         """
         torch = self.torch
         feats = np.asarray(graph["features"], dtype=np.float32)
@@ -214,15 +220,35 @@ class AuthorTemporalEmbedder:
         x = g.ndata["feature"]
         opt = torch.optim.Adam(self._model.parameters(), lr=lr)
         last = {}
+        best = float("inf")
+        best_state = None
+        stale = 0
+        ran = 0
         for _ in range(int(epochs)):
             opt.zero_grad()
             _h, loss = self._model.forward(g, x)
             loss.backward()
             torch.nn.utils.clip_grad_norm_(self._model.parameters(), 5.0)
             opt.step()
+            ran += 1
             log = getattr(self._model, "latest_trainlog", {}) or {}
             last = {k: float(v) for k, v in log.items() if isinstance(v, (int, float))}
             last["final"] = float(loss)
+            if patience:
+                cur = float(loss)
+                if cur < best - 1e-6:
+                    best = cur
+                    best_state = {k: v.detach().clone()
+                                  for k, v in self._model.state_dict().items()}
+                    stale = 0
+                else:
+                    stale += 1
+                    if stale >= int(patience):
+                        break
+        if patience and best_state is not None:
+            self._model.load_state_dict(best_state)
+            last["best_loss"] = best
+        last["epochs_run"] = ran
         self.last_loss = last
         self.pretrained = True
         return last
@@ -236,7 +262,10 @@ class AuthorTemporalEmbedder:
         return {"source": "author", "embed_dim": self.embed_dim,
                 "h_feats": self.h_feats, "num_layers": self.num_layers,
                 "round_window": self.round_window,
-                "refit_count": self.refit_count}
+                "alpha": self.alpha, "beta": self.beta,
+                "pretrained": bool(self.pretrained),
+                "refit_count": self.refit_count,
+                "last_loss": dict(self.last_loss)}
 
 
 class TPNEEmbedder:
@@ -337,6 +366,16 @@ class TPNEEmbedder:
         if self.temporal_weight is not None:
             ps.append(self.temporal_weight.weight)
         return ps
+
+    def _state(self):
+        """Snapshot of every trainable tensor, for early-stopping restore."""
+        return [p.detach().clone() for p in self._params()]
+
+    def _load_state(self, snap):
+        torch = self.torch
+        with torch.no_grad():
+            for p, v in zip(self._params(), snap):
+                p.copy_(v)
 
     def _adjacency(self, graph, n):
         """Row-normalised adjacency with self-loops, as a dense tensor.
@@ -591,12 +630,17 @@ class TPNEEmbedder:
         self._to(self.device)
 
     # ------------------------------------------------------------ pretraining
-    def pretrain(self, graph, epochs=30, lr=0.01, history=None, warm=False):
+    def pretrain(self, graph, epochs=30, lr=0.01, history=None, warm=False,
+                 patience=None):
         """Gradient-based self-supervised pre-training on the paper's losses.
 
         Minimises ``L_recon``, ``L_disent`` and ``L_temp`` with Adam so the
         losses *shape* the representation, as in the original TPNE, instead of
         merely scoring it (which is all the numpy path can do).
+
+        ``patience`` mirrors the reference's early stopping
+        (``early_stopping = 75``); the best weights seen are restored and
+        ``None`` disables it.
 
         ``warm=True`` keeps the existing optimiser state and skips re-seeding,
         which is what makes the incremental arm cost one optimisation pass per
@@ -614,6 +658,10 @@ class TPNEEmbedder:
             self._opt = torch.optim.Adam(self._params(), lr=lr)
         opt = self._opt
         last = {}
+        best = float("inf")
+        best_state = None
+        stale = 0
+        ran = 0
         for _ in range(epochs):
             opt.zero_grad()
             h_static, h_temp = self._forward_t(graph, x, age_t, history)
@@ -638,10 +686,25 @@ class TPNEEmbedder:
             loss.backward()
             torch.nn.utils.clip_grad_norm_(self._params(), 5.0)
             opt.step()
+            ran += 1
             last = {"recon": float(r), "disen": float(d), "temp": float(t),
                     "final": float(loss)}
+            if patience:
+                cur = float(loss)
+                if cur < best - 1e-6:
+                    best = cur
+                    best_state = self._state()
+                    stale = 0
+                else:
+                    stale += 1
+                    if stale >= int(patience):
+                        break
+        if patience and best_state is not None:
+            self._load_state(best_state)
+            last["best_loss"] = best
+        last["epochs_run"] = ran
         self.last_loss = last
-        self.pretrain_epochs = epochs
+        self.pretrain_epochs = ran
         self.pretrained = True
         return last
 

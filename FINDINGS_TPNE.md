@@ -234,14 +234,33 @@ Measured, 1 trial:
 **It does not help, for a specific and fixable reason.** The reference
 encoder's quality comes from the training loop in
 `vendor/author-tpne/src/experiment/supervised_multi.py`, which optimises the
-three losses for up to 500 epochs per round. The adapter provides inference
-only — `pretrain()` raises `NotImplementedError` deliberately rather than
-silently returning an untrained embedding. Fed an untrained encoder it scores
-*worse* than the raw node features (23.82 vs 53.06).
+three losses for up to 500 epochs per round. At the time of this measurement
+the adapter provided inference only — `pretrain()` raised
+`NotImplementedError` deliberately rather than silently returning an untrained
+embedding. Fed an untrained encoder it scores *worse* than the raw node
+features (23.82 vs 53.06).
 
-So the encoder gap is not closable by calling the reference module; it is
-closable only by running the reference *training loop* around it. That is the
-next step, and it is real engineering rather than a one-line swap.
+> ### Correction (this paragraph was stale)
+>
+> `AuthorTemporalEmbedder.pretrain()` **is** implemented now — it drives the
+> vendored `TemporalEmbedder.forward`, whose `(L_recon + a·L_disent +
+> b·L_temp)/(1+a+b)` loss is fully differentiable, and it accepts `patience`
+> to mirror the reference's `early_stopping = 75`. So the encoder gap is
+> closable by running the reference loop, and that has been done.
+>
+> A second, larger bug was found alongside it. `scripts/upgraded_tpne.py`
+> guarded pre-training with `embedder != "author"`, a guard that predated the
+> implementation. Its effect was that **`--embedder author` silently ran the
+> reference encoder untrained**, so every earlier author-embedder number was
+> measured against a randomly-initialised encoder. That guard has been removed;
+> pre-training now runs for whichever embedder is selected and falls back with
+> a warning if unsupported. Re-measure before quoting any number in this
+> subsection.
+
+So the encoder gap was never closable by *calling* the reference module; it
+required running the reference *training loop* around it — which is now what
+happens. Whether 500 epochs is enough is the open question, answered by the
+`refsched_author_*` runs.
 
 ### 4.4 IEEE-CIS V-feature A/B — inconclusive
 

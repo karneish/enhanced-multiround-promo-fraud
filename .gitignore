@@ -46,9 +46,13 @@ data/*.parquet
 data/*.bin
 
 # Runtime / model artifacts
-result/
-results/
-checkpoint/*
+# Scoped to the repo root. A bare `result/` rule also swallowed
+# vendor/author-tpne/result/, which holds the authors' own result CSVs -- the
+# evidence for the 57.09 +/- 2.33 control that every comparison here rests on.
+/result/
+/results/
+/checkpoint/
+/checkpoints/
 
 # TypeScript build cache
 *.tsbuildinfo
