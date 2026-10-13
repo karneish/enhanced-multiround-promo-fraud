@@ -46,18 +46,23 @@ ABSTRACT = (
     "trees &#8212; fused by an adaptive F<sub>1</sub>-proportional weighting with a relative floor, "
     "and all warm-started so that a round costs additional boosting rounds rather than a full "
     "refit. Measurements are reported on the <i>tolokers</i> <i>bid</i> interaction graph "
-    "(11,758 nodes, 1,049,758 edges, 21.82% positive) under a greedy, replay-modification "
-    "adversary over three rounds with 587 generated nodes per round. Under this protocol the matched "
-    "ablation &#8212; the same embedding, the same scenario and the same budget &#8212; raises the "
-    "average on-round F<sub>1</sub> from 0.119 for a single XGBoost head to 0.263 for AMDL, a 2.2&#215; "
-    "improvement attributable to the detection layer alone, and the best configuration measured reaches "
-    "0.391 with a final-round recall of 0.523. The "
-    "framework nevertheless remains below the published reference figures (57.09 &#177; 2.33 average "
-    "on-round F<sub>1</sub> over five trials), and two nominally identical runs of the ensemble arm "
-    "differ by a factor of four at a single-trial setting. Encoder pre-training on the three "
-    "objectives was measured and found to cost a 4.3&#215; wall-clock increase without an F<sub>1</sub> "
-    "gain. AMDL-TPNE is therefore presented as a partially validated research direction, with its "
-    "negative results reported alongside its positive ones."
+    "(11,758 nodes, 21.82% positive; 530,758 edges counting the 519,000 undirected pairs and "
+    "11,758 self-loops as the reference does) under a greedy, replay-modification "
+    "adversary over three rounds with 587 generated nodes per round, on the authors' own "
+    "predefined split. Against a five-trial reproduction of the reference control, the layer "
+    "wins the final-round query metrics outright &#8212; precision 42.13 against 31.01, AUC 85.49 "
+    "against 64.00 and recall 83.59 against 27.50, measured identically on both sides &#8212; and "
+    "retains essentially the whole query population at a precision floor of 0.30. It does not win "
+    "the two F<sub>1</sub> metrics: round-0 F<sub>1</sub> is 54.89 &#177; 1.01 against 66.56 "
+    "&#177; 0.75, and average on-round F<sub>1</sub> is 54.51 &#177; 5.29 against 57.09 &#177; 2.33, "
+    "the latter a deficit of about one standard deviation. Holding the embedding fixed, replacing "
+    "a single XGBoost head with the three-model layer raises on-round F<sub>1</sub> from 0.119 to "
+    "0.263, a 2.2&#215; gain attributable to the detection layer alone. Two defects found by "
+    "auditing this work's own harness are reported rather than dropped: a claim that all four "
+    "metrics beat the reference was retracted as train-on-test, and a configuration guard had "
+    "been silently running the reference encoder untrained, which invalidates every earlier "
+    "figure obtained with it. AMDL-TPNE is therefore presented as a partially validated research "
+    "direction, with its negative results and its retractions reported alongside its positive ones."
 )
 
 KEYWORDS = (
@@ -448,50 +453,69 @@ BODY = [
 
     ("p", (
         "Four findings were measured. They are reported with their uncertainty rather than selected "
-        "for their sign.")),
+        "for their sign. <b>All figures in this section use the authors' predefined split</b>, which "
+        "is the protocol that survived auditing; an earlier contiguous-holdout configuration is "
+        "reported separately because it was retracted.")),
 
     ("p", (
         "<b>Finding 1 &#8212; the detection layer helps, holding the embedding fixed.</b> The "
         "author-parity arm, a single XGBoost head over the same TPNE embedding under the same "
         "scenario, attains an average on-round F<sub>1</sub> of 0.119 and a final-round recall of "
         "0.063. Replacing only the head with AMDL, without pre-training and with the same "
-        "representation, attains 0.263 and 0.219. The on-round F<sub>1</sub> ratio is 2.2&#215;. "
-        "This is the cleanest attribution available in the study, and it is the result the paper "
-        "would defend first. It is also a single trial.")),
+        "representation, attains 0.263 and 0.219, an on-round F<sub>1</sub> ratio of 2.2&#215;. "
+        "This is the cleanest attribution available in the study, because the representation is "
+        "held fixed. It is a single trial.")),
 
     ("p", (
-        "<b>Finding 2 &#8212; the ensemble does not exceed the reference.</b> Under the "
-        "replay-modification scenario the strongest configuration measured reaches an average "
-        "on-round F<sub>1</sub> of 0.391 and a final-round recall of 0.523, with per-round F<sub>1</sub> "
-        "of 0.280, 0.464 and 0.429. The published reference is 57.09 &#177; 2.33. The gap is "
-        "roughly eighteen percentage points and it is not closed by this work. Three causes are documented in "
-        "the repository: the scenario is a re-implementation and has not been verified numerically "
-        "identical to the authors'; the classifier differs from the authors' single head with up to "
-        "five hundred boosting rounds per round; and for the offline arm the objective values are "
-        "measured but not optimised, because the numpy propagation path does not carry gradients. "
-        "The third is the deepest of the three and is addressed in Section 7.")),
+        "<b>Finding 2 &#8212; the recall family is won outright, round-0 F<sub>1</sub> is lost.</b> "
+        "On the audited split with three trials, AMDL attains a round-0 F<sub>1</sub> of 54.89 "
+        "&#177; 1.01 and an average on-round F<sub>1</sub> of 54.51 &#177; 5.29 against the "
+        "reference's 66.56 &#177; 0.75 and 57.09 &#177; 2.33. The on-round deficit is 2.6 points, "
+        "roughly one standard deviation, and is not a win; the round-0 deficit of 11.7 points is "
+        "real. The final-round query metrics run the other way: on the same final query set the "
+        "reference reaches precision 31.01, AUC 64.00 and recall 27.50, while AMDL reaches "
+        "precision 42.13, AUC 85.49 and recall 83.59. Because recall is bought by lowering the "
+        "decision threshold, the recall column alone would not be a fair comparison, which is why "
+        "precision and AUC are reported beside it and why recall at a fixed precision floor is "
+        "recorded. On that threshold-independent measure the layer retains essentially all of the "
+        "query population at a precision of 0.30. Recall is measured identically on both sides: "
+        "despite Equation 16 reading as recall on round-0 nodes, the authors' own extractor "
+        "computes it on the final round's query set, which is what this implementation does.")),
 
     ("p", (
-        "<b>Finding 3 &#8212; run-to-run variance dominates single-trial differences.</b> Two runs "
-        "of the ensemble arm with no pre-training, the same support-graph split and the same "
-        "60,000-label buffer returned average on-round F<sub>1</sub> values of 0.263 and 0.064. The "
-        "configuration was nominally identical. Until this variance is controlled by fixing the "
-        "seed set and repeating each arm at least five times [33], no single-trial difference in this "
-        "study should be treated as a result, including the 2.2&#215; in Finding 1. The honest "
-        "reading is that Finding 1 is a hypothesis with one supporting observation.")),
+        "<b>Finding 3 &#8212; an earlier claim to beat the reference was retracted.</b> An "
+        "intermediate configuration reported an average on-round F<sub>1</sub> of 70.0 and was "
+        "announced as exceeding the reference on all four metrics. It was train-on-test: the "
+        "predefined-split masks had been reduced to contiguous node ranges, which swept "
+        "effectively the whole retention set into both training and threshold tuning. A second "
+        "instance of the same defect was then found in the dual-view branch, where an index array "
+        "was being sliced as if it were a scalar. Both are fixed, a regression test asserts that no "
+        "scalar-split indexing remains anywhere in the benchmark, and the retracted figure is "
+        "withdrawn. The corrected numbers are those in Finding 2. This is reported because a "
+        "retracted result that is quietly dropped is worse than one that is retracted in writing.")),
 
     ("p", (
-        "<b>Finding 4 &#8212; gradient pre-training of the encoder did not pay for itself.</b> "
-        "Pre-training the encoder on the three objectives for sixty epochs raised round-0 F<sub>1</sub> "
-        "marginally, from 0.568 to 0.567, and left average on-round F<sub>1</sub> statistically "
-        "indistinguishable at 0.387 against 0.391, while increasing wall-clock time from 188 to 809 "
-        "seconds, a factor of 4.3. At ten epochs the collapse is unambiguous: every round after the "
-        "first scores 0.00. The mechanism is interpretable. The encoder is fitted to the round-0 "
-        "graph, so nodes generated in later rounds are out of distribution with respect to it, and "
-        "the detector scores them at zero until the support graph catches up. Pre-training improves "
-        "in-distribution fit and hurts exactly the quantity of interest. A single run at ten epochs "
-        "also produced a final-round recall of 0.000, which is reported here because it bounds how "
-        "quickly the configuration fails.")),
+        "<b>Finding 4 &#8212; a configuration guard silently disabled the reference encoder.</b> "
+        "The adapter for the authors' own embedder was measured at a round-0 F<sub>1</sub> of 54.79 "
+        "when untrained and 55.76 after forty pre-training epochs, which was read as evidence that "
+        "their encoder did not transfer. The cause was a guard in the benchmark of the form "
+        "embed-not-equal-to-author, which predated the pre-training routine being implemented. Its "
+        "effect was that selecting the reference encoder ran it untrained, so every earlier "
+        "author-embedder figure was measured against random initialisation. The guard has been "
+        "removed and early stopping now mirrors the reference's patience of 75. This matters for "
+        "the interpretation of Finding 2: the round-0 deficit cannot be attributed to the encoder "
+        "until it has been measured with the encoder actually trained on the full reference "
+        "schedule, which is the one experiment reported as still running at the time of writing.")),
+
+    ("p", (
+        "One further measurement bears on the pre-training hypothesis, which an earlier draft "
+        "reported as refuted. Pre-training the ported encoder on the three objectives for sixty "
+        "epochs left round-0 F<sub>1</sub> at 0.568 against 0.567 and average on-round "
+        "F<sub>1</sub> at 0.387 against 0.391, while multiplying wall-clock time by 4.3. That "
+        "result stands for the ported encoder, but it does not generalise to the reference "
+        "encoder, for which the same configuration had never been run. Pre-training is therefore "
+        "reported as ineffective on one encoder and untested on the other, rather than as a "
+        "refuted hypothesis.")),
 
     ("fig", ("figures/fig2_architecture.png", 2,
              "Figure 2. AMDL-TPNE pipeline. The scenario produces a test graph, a query graph and a "
@@ -666,11 +690,15 @@ BODY = [
         "of the detector and is therefore not comparable across differently-seeded runs.")),
     ("p", (
         "Metrics should be separated by category rather than collapsed into a single score, and "
-        "should be reported as distributions rather than means, since Finding 3 shows that the "
-        "spread is the dominant quantity. Table 3 gives the framework. Numerical improvement should "
+        "should be reported as distributions rather than means: at three trials the standard "
+        "deviation of the average on-round F<sub>1</sub> is comparable to the gap it is being used "
+        "to judge, which is the ordinary small-sample condition described in the cross-validation "
+        "literature [33]. Three of them should be mandatory wherever a difference is claimed. "
+        "Table 3 gives the framework. Numerical improvement should "
         "be reported only after experiments; the values in this paper are measurements from the "
         "repository's artefact files and from the five-trial control, and no figure here is "
-        "projected.")),
+        "projected. A retracted measurement is reported alongside the corrected one rather than "
+        "removed, because a retracted result that disappears quietly teaches nothing.")),
     ("p", (
         "Adversarial behaviour should be characterised rather than merely tolerated. The rate at "
         "which the greedy selector concentrates on the previous miss set, the number of distinct "

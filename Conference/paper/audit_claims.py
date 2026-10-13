@@ -74,9 +74,13 @@ check("ensemble (matched ablation) recall", 0.219, round(R["abl_nopretrain"]["RT
 ratio = R["abl_nopretrain"]["RT-avg_f1_t>0"] / R["upgraded_authorparity"]["RT-avg_f1_t>0"]
 check("head-vs-ensemble ratio (paper says 2.2x)", 2.2, round(ratio, 2), 0.05)
 
-# "best configuration measured reaches 0.391 with a final-round recall of 0.523"
-check("best on-round F1", 0.391, round(R["replay_pre60"]["RT-avg_f1_t>0"], 3), 5e-4)
-check("best final-round recall", 0.523, round(R["replay_pre60"]["RT-recall_0"], 3), 5e-4)
+# "the strongest configuration reaches an average on-round F1 of 54.51 +- 5.29"
+CORR = {n: rep(n) for n in ("fixed_masks_embed_3t", "fixed_masks_raw_3t")}
+check("corrected on-round F1 (embed)", 54.51, round(100 * CORR["fixed_masks_embed_3t"]["RT-avg_f1_t>0"], 2), 0.01)
+check("corrected round-0 F1 (embed)", 54.89, round(100 * CORR["fixed_masks_embed_3t"]["RT-f1_0_start"], 2), 0.01)
+check("corrected round-0 F1 (raw)", 46.49, round(100 * CORR["fixed_masks_raw_3t"]["RT-f1_0_start"], 2), 0.01)
+check("corrected on-round F1 (raw)", 51.78, round(100 * CORR["fixed_masks_raw_3t"]["RT-avg_f1_t>0"], 2), 0.01)
+
 
 # "57.09 +/- 2.33"
 check("reference avg on-round F1", 57.09, 57.09)
@@ -143,6 +147,8 @@ def in_paper(fragment, label=None):
 
 # Claims that must NOT appear, because the artefacts contradict them.
 for bad, why in [
+    ("70.57", "retracted train-on-test figure"),
+    ("70.0 and was announced", "retracted framing must not read as a result"),
     ("67.09", "transposed 66.56"),
     ("26.34", "stale README figure, superseded by 0.263/0.391"),
     ("28.24", "stale incremental figure from README"),
@@ -205,8 +211,10 @@ if _os.path.exists(_pdf):
         (PASS if not stray else FAIL).append(
             f"PDF contains no unrendered markup: {'OK' if not stray else '<-- ' + str(stray[:5])}")
         for frag, label in [("0.119", "corrected author-parity F1"),
-                           ("0.429", "corrected per-round r3 F1"),
-                           ("0.568", "corrected round-0 F1")]:
+                           ("54.89", "corrected round-0 F1"),
+                           ("83.59", "recall on the final query set"),
+                           ("85.49", "AUC on the final query set"),
+                           ("42.13", "precision on the final query set")]:
             ok = frag in rendered
             (PASS if ok else FAIL).append(
                 f"PDF shows corrected figure {frag} ({label}): {'OK' if ok else '<-- MISSING'}")
