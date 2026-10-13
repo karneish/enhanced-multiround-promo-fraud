@@ -1,0 +1,1 @@
+arm=ensemble rounds=3 trials=3 pre=500/300 buffer=60000 h=64 W=7

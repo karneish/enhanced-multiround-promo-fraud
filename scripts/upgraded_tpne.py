@@ -429,9 +429,22 @@ def run(arm, rounds, seed, pretrain_epochs, pretrain_epochs_round,
         # impossible. Pre-training is now attempted for whichever embedder is
         # selected, and falls back safely if it does not support it.
         if pretrain_epochs:
+            t_pre = time.time()
             try:
-                emb.pretrain(scenario.graph_dict(), epochs=pretrain_epochs,
-                             lr=0.01, patience=patience)
+                loss = emb.pretrain(scenario.graph_dict(),
+                                    epochs=pretrain_epochs,
+                                    lr=0.01, patience=patience)
+                ll = loss.get("final")
+                print(f"  [trial {trial}] pretrain R0: "
+                      f"{loss.get('epochs_run', pretrain_epochs)} epochs in "
+                      f"{time.time() - t_pre:.0f}s, final loss "
+                      f"{ll:.4f}" if isinstance(ll, float) else
+                      f"  [trial {trial}] pretrain R0 done", flush=True)
+                if isinstance(ll, float):
+                    print(f"  [trial {trial}]   loss terms: "
+                          + ", ".join(f"{k}={v:.4f}" for k, v in
+                                      sorted(loss.items())
+                                      if isinstance(v, float)), flush=True)
             except (NotImplementedError, AttributeError, TypeError) as e:
                 print(f"  [warn] pre-training unavailable for this embedder: {e}")
         E0, _ = emb.embed(scenario.graph_dict())
@@ -529,9 +542,15 @@ def run(arm, rounds, seed, pretrain_epochs, pretrain_epochs_round,
               f"(val F1 {_metrics(y_all[val_idx], head.predict(X0[val_idx], thr))[0]*100:.2f}, "
               f"val F1@0.5 {_metrics(y_all[val_idx], head.predict(X0[val_idx], 0.5))[0]*100:.2f})",
               flush=True)
-        f1_init = _metrics(y_all[test_idx], head.predict(X0[test_idx], thr))[0]
+        y0 = y_all[test_idx]
+        p0 = head.predict(X0[test_idx], thr)
+        s0 = head.predict_proba(X0[test_idx])
+        m0 = _full_metrics(y0, p0.astype(bool), s0)
+        f1_init = m0["f1"]
         rec0 = {"f1_initial": f1_init, "f1_round0_nodes": f1_init,
-                "threshold": thr}
+                "threshold": thr,
+                "precision": m0["precision"], "recall": m0["recall"],
+                "auc": m0["auc"]}
 
         per_round = []
         for r in range(1, rounds + 1):
@@ -565,6 +584,11 @@ def run(arm, rounds, seed, pretrain_epochs, pretrain_epochs_round,
                 "f1_round0_nodes": _metrics(y_all[test_idx], ret)[0],
                 "n_query": int(len(yr)),
             })
+            print(f"  [trial {trial}] round {r}: f1_query={qm['f1']*100:.2f} "
+                  f"prec={qm['precision']*100:.2f} "
+                  f"rec={qm['recall']*100:.2f} "
+                  f"auc={(qm['auc']*100 if qm['auc'] is not None else float('nan')):.2f} "
+                  f"f1_r0={_metrics(y_all[test_idx], ret)[0]*100:.2f}", flush=True)
 
             # ---- support graph: TRAIN on this round's adversarial nodes
             # (paper §4: G_tS grows, G_tQ is only ever scored)
@@ -580,6 +604,9 @@ def run(arm, rounds, seed, pretrain_epochs, pretrain_epochs_round,
 
         out.append({"round0": rec0, "rounds": per_round,
                     "seconds": round(time.time() - t0, 1),
+                    "round0_auc": rec0.get("auc"),
+                    "round0_precision": rec0.get("precision"),
+                    "pretrain_loss": dict(getattr(emb, "last_loss", {}) or {}),
                     "embed_summary": emb.summary()})
         m = rt_metrics([out[-1]])
         print(f"  trial {trial}: RT-f1_0_start={m['RT-f1_0_start']*100:.2f} "
